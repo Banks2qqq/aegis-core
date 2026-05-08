@@ -1,0 +1,16 @@
+# Node.js - Самый важный пункт
+**/node_modules/
+**/.next/
+**/out/
+**/build/
+frontend/node_modules/
+frontend/.next/
+
+# Rust
+backend/target/
+**/*.rs.bk
+
+# Системные файлы
+.DS_Store
+*.env
+*.node
