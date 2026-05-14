@@ -1,0 +1,539 @@
+{
+  "version": 25,
+  "timestamp": 1778669050,
+  "topic": "новая тестовая угроза 2026",
+  "total_items": 12,
+  "white_knowledge_count": 3,
+  "black_knowledge_count": 5,
+  "hypothesis_count": 4,
+  "ttp_count": 0,
+  "total_weighted_importance": 11.7,
+  "avg_confidence": 0.6416666666666667,
+  "weighted_avg_confidence": 0.6482905982905984,
+  "top_tags": [
+    [
+      "scout_llm",
+      11.7
+    ],
+    [
+      "scout",
+      8.0
+    ],
+    [
+      "threat",
+      5.0
+    ],
+    [
+      "hypothesis",
+      3.7
+    ],
+    [
+      "remediation",
+      3.0
+    ],
+    [
+      "credential_leak",
+      1.0
+    ],
+    [
+      "darknet",
+      1.0
+    ],
+    [
+      "exploit_poc",
+      1.0
+    ],
+    [
+      "ransomware",
+      1.0
+    ],
+    [
+      "initial_access_broker",
+      1.0
+    ],
+    [
+      "2026",
+      0.9500000000000001
+    ],
+    [
+      "disinformation_possible",
+      0.9500000000000001
+    ]
+  ],
+  "top_iocs": [],
+  "top_sources": [
+    [
+      "white_sources",
+      5.0
+    ],
+    [
+      "scout_llm_hypothesis",
+      3.7
+    ],
+    [
+      "darknet-heuristic",
+      3.0
+    ]
+  ],
+  "top_white_tags": [
+    [
+      "scout",
+      6.357632000000001
+    ],
+    [
+      "remediation",
+      6.357632000000001
+    ],
+    [
+      "scout_llm",
+      6.357632000000001
+    ]
+  ],
+  "top_black_tags": [
+    [
+      "threat",
+      11.69576
+    ],
+    [
+      "scout_llm",
+      11.69576
+    ],
+    [
+      "scout",
+      11.69576
+    ]
+  ],
+  "white_iocs": [],
+  "black_iocs": [],
+  "items": [
+    {
+      "id": "71d01e88-0639-47df-9a4d-282165aae4c3",
+      "item_type": "Hypothesis",
+      "source": "scout_llm_hypothesis",
+      "confidence": 0.35,
+      "tags": [
+        "zero_day",
+        "supply_chain",
+        "active_exploitation",
+        "cisa_kev",
+        "controlled_disclosure",
+        "hypothesis",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 0.85,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "02a428e0-37cd-42b7-8104-34fe044741f6",
+      "item_type": "White",
+      "source": "white_sources",
+      "confidence": 0.7,
+      "tags": [
+        "scout",
+        "remediation",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 1.0,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "c15dc237-e608-46ef-bed8-ee5c8178c6f0",
+      "item_type": "Black",
+      "source": "darknet-heuristic",
+      "confidence": 0.78,
+      "tags": [
+        "scout",
+        "threat",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 1.0,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "5d46bc27-2203-4baa-a108-6863b03d2a12",
+      "item_type": "White",
+      "source": "white_sources",
+      "confidence": 0.7,
+      "tags": [
+        "scout",
+        "remediation",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 1.0,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "654e320f-bf76-4f8f-be97-a6c1ca154295",
+      "item_type": "Black",
+      "source": "white_sources",
+      "confidence": 0.78,
+      "tags": [
+        "scout",
+        "threat",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 1.0,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "0d230905-b938-4c5a-9fe9-454f7afa0975",
+      "item_type": "Black",
+      "source": "white_sources",
+      "confidence": 0.78,
+      "tags": [
+        "scout",
+        "threat",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 1.0,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "59875b32-bebd-437f-8597-82c6f73d3aa9",
+      "item_type": "Hypothesis",
+      "source": "scout_llm_hypothesis",
+      "confidence": 0.5,
+      "tags": [
+        "ransomware",
+        "initial_access_broker",
+        "exploit_poc",
+        "credential_leak",
+        "darknet",
+        "hypothesis",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 1.0,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "ec7d43d7-3508-4277-a951-475930a0c25f",
+      "item_type": "Black",
+      "source": "darknet-heuristic",
+      "confidence": 0.78,
+      "tags": [
+        "scout",
+        "threat",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 1.0,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "be535604-264e-4627-8bc1-b28d59a8506d",
+      "item_type": "Hypothesis",
+      "source": "scout_llm_hypothesis",
+      "confidence": 0.45,
+      "tags": [
+        "threat_campaign",
+        "multi_source",
+        "early_warning",
+        "disinformation_possible",
+        "2026",
+        "hypothesis",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 0.9500000000000001,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "4212e7f7-a50a-4333-b502-cc84064caaff",
+      "item_type": "Hypothesis",
+      "source": "scout_llm_hypothesis",
+      "confidence": 0.4,
+      "tags": [
+        "advisory_conflict",
+        "information_suppression",
+        "embargo_possible",
+        "data_integrity",
+        "hypothesis",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 0.9,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "9acd39ad-b68b-4a3f-bcba-e27142f1d548",
+      "item_type": "Black",
+      "source": "darknet-heuristic",
+      "confidence": 0.78,
+      "tags": [
+        "scout",
+        "threat",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 1.0,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    },
+    {
+      "id": "43ff5918-01f0-4b5b-9bef-38e8c0893d71",
+      "item_type": "White",
+      "source": "white_sources",
+      "confidence": 0.7,
+      "tags": [
+        "scout",
+        "remediation",
+        "scout_llm"
+      ],
+      "related_iocs": [],
+      "verified_by": [
+        "scout",
+        "scout_llm",
+        "human_override",
+        "critic",
+        "inquisitor",
+        "human"
+      ],
+      "weight": 1.0,
+      "last_reinforced_at": 1778669050,
+      "feedback": null
+    }
+  ],
+  "reinforcement": {
+    "fbabce2c-506e-4720-8f0e-794019f4439f": {
+      "last_reinforced_at": 1778668354,
+      "importance": 0.8929999999999999
+    },
+    "c39476ee-5c38-4f38-a897-3a9be5dfbd89": {
+      "last_reinforced_at": 1778668354,
+      "importance": 0.846
+    },
+    "43ff5918-01f0-4b5b-9bef-38e8c0893d71": {
+      "last_reinforced_at": 1778669050,
+      "importance": 1.0
+    },
+    "ce4caf2f-5624-432c-833a-12f2ed3d5de7": {
+      "last_reinforced_at": 1778583362,
+      "importance": 0.8217479999999999
+    },
+    "654e320f-bf76-4f8f-be97-a6c1ca154295": {
+      "last_reinforced_at": 1778669050,
+      "importance": 1.0
+    },
+    "b9f7382d-b2c6-402e-af62-8d4ae327d557": {
+      "last_reinforced_at": 1778583362,
+      "importance": 0.8217479999999999
+    },
+    "9acd39ad-b68b-4a3f-bcba-e27142f1d548": {
+      "last_reinforced_at": 1778669050,
+      "importance": 1.0
+    },
+    "80afb5ba-0854-421c-b5a8-e7930efa634c": {
+      "last_reinforced_at": 1778668354,
+      "importance": 0.94
+    },
+    "7bd06f91-965a-484d-a91f-8cebf40bf730": {
+      "last_reinforced_at": 1778583362,
+      "importance": 0.6185199999999998
+    },
+    "d3b37c98-da6b-4aef-b426-a9bf11cdd2cc": {
+      "last_reinforced_at": 1778583362,
+      "importance": 0.8217479999999999
+    },
+    "c15dc237-e608-46ef-bed8-ee5c8178c6f0": {
+      "last_reinforced_at": 1778669050,
+      "importance": 1.0
+    },
+    "f68224bc-baa4-4725-b4cd-b908018c28e9": {
+      "last_reinforced_at": 1778668354,
+      "importance": 0.94
+    },
+    "1e236663-ba6e-4628-8032-0fa8cdb663b2": {
+      "last_reinforced_at": 1778668354,
+      "importance": 0.94
+    },
+    "4de6dfc2-a0fa-4b0a-a23c-470bce8e255b": {
+      "last_reinforced_at": 1778583362,
+      "importance": 0.6892079999999999
+    },
+    "02a428e0-37cd-42b7-8104-34fe044741f6": {
+      "last_reinforced_at": 1778669050,
+      "importance": 1.0
+    },
+    "59875b32-bebd-437f-8597-82c6f73d3aa9": {
+      "last_reinforced_at": 1778669050,
+      "importance": 1.0
+    },
+    "12f95839-8eef-46ef-ab4b-603a1919cfe1": {
+      "last_reinforced_at": 1778668354,
+      "importance": 0.94
+    },
+    "4212e7f7-a50a-4333-b502-cc84064caaff": {
+      "last_reinforced_at": 1778669050,
+      "importance": 0.9
+    },
+    "897ad18d-aa65-4d23-a2da-7f52a31c94ae": {
+      "last_reinforced_at": 1778583362,
+      "importance": 0.6185199999999998
+    },
+    "be535604-264e-4627-8bc1-b28d59a8506d": {
+      "last_reinforced_at": 1778669050,
+      "importance": 0.9500000000000001
+    },
+    "a14da0a6-d52a-495f-bb5c-6131a50f7246": {
+      "last_reinforced_at": 1778583362,
+      "importance": 0.8217479999999999
+    },
+    "71d01e88-0639-47df-9a4d-282165aae4c3": {
+      "last_reinforced_at": 1778669050,
+      "importance": 0.85
+    },
+    "0d230905-b938-4c5a-9fe9-454f7afa0975": {
+      "last_reinforced_at": 1778669050,
+      "importance": 1.0
+    },
+    "374a4ca5-71fe-45dc-a0f3-2278123929c5": {
+      "last_reinforced_at": 1778583362,
+      "importance": 0.8217479999999999
+    },
+    "ec7d43d7-3508-4277-a951-475930a0c25f": {
+      "last_reinforced_at": 1778669050,
+      "importance": 1.0
+    },
+    "bf1752f7-258e-4f41-8ee7-bcbf0261fce5": {
+      "last_reinforced_at": 1778583362,
+      "importance": 0.6185199999999998
+    },
+    "5800739c-c0b3-4446-b720-14d72a79b72c": {
+      "last_reinforced_at": 1778668354,
+      "importance": 0.94
+    },
+    "63bcd69e-6951-4de9-a07a-4a0a9f593aaf": {
+      "last_reinforced_at": 1778668354,
+      "importance": 0.94
+    },
+    "5d46bc27-2203-4baa-a108-6863b03d2a12": {
+      "last_reinforced_at": 1778669050,
+      "importance": 1.0
+    }
+  },
+  "cumulative_white_tags": {
+    "scout": 6.357632000000001,
+    "remediation": 6.357632000000001,
+    "scout_llm": 6.357632000000001
+  },
+  "cumulative_black_tags": {
+    "threat": 11.69576,
+    "scout_llm": 11.69576,
+    "scout": 11.69576
+  },
+  "cumulative_white_iocs": {},
+  "cumulative_black_iocs": {},
+  "last_update_diff": {
+    "delta_total_items": 4,
+    "delta_white_knowledge_count": 2,
+    "delta_black_knowledge_count": 2,
+    "delta_hypothesis_count": 0,
+    "delta_avg_confidence": -0.0008333333333333526,
+    "delta_total_weighted_importance": 3.8499999999999996
+  }
+}

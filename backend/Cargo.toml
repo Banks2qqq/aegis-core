@@ -1,0 +1,93 @@
+[package]
+name = "aegis-enterprise"
+version = "0.2.0"
+edition = "2021"
+
+# Clippy -D warnings: allow noisy style lints on large agent/oracle surfaces; fix correctness lints in code.
+[lints.clippy]
+new_without_default = "allow"
+too_many_arguments = "allow"
+result_large_err = "allow"
+type_complexity = "allow"
+print_literal = "allow"
+collapsible_if = "allow"
+collapsible_match = "allow"
+single_match = "allow"
+needless_range_loop = "allow"
+explicit_auto_deref = "allow"
+possible_missing_else = "allow"
+useless_vec = "allow"
+doc_lazy_continuation = "allow"
+empty_line_after_doc_comments = "allow"
+
+[[bin]]
+name = "sentinel-core"
+path = "src/sentinel/main.rs"
+
+[[bin]]
+name = "oracle-brain"
+path = "src/oracle/main.rs"
+
+[[bin]]
+name = "agent-cli"
+path = "src/agent/main.rs"
+
+[[bin]]
+name = "oracle-mock"
+path = "src/oracle/mock.rs"
+
+[dependencies]
+md5 = "0.7"
+jsonwebtoken = "9"
+axum-extra = { version = "0.9", features = ["typed-header"] }
+tonic = { version = "0.12", features = ["tls", "tls-roots", "server", "channel"] }
+prost = "0.13"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+sysinfo = "0.31"
+async-trait = "0.1"
+
+syn = { version = "2.0", features = ["full", "parsing", "visit"] }
+quote = "1.0"
+proc-macro2 = "1.0"
+
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+opentelemetry = { version = "0.24", features = ["metrics"] }
+opentelemetry-prometheus = "0.17"
+prometheus = "0.13"
+
+axum = { version = "0.7", features = ["ws", "json"] }
+tower-http = { version = "0.5", features = ["cors"] }
+
+crossterm = "0.27"
+ratatui = "0.26"
+rand = "0.8"
+rustls = "0.23"
+rustls-pemfile = "2.0"
+
+# === Enterprise Config Layer ===
+figment = { version = "0.10", features = ["yaml", "env"] }
+clap = { version = "4.5", features = ["derive"] }
+serde_yaml = "0.9"
+urlencoding = "2.1"
+
+[build-dependencies]
+tonic-build = "0.12"
+prost-build = "0.13"
+jsonwebtoken = "9"
+axum-extra = { version = "0.9", features = ["typed-header"] }
+

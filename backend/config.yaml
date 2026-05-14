@@ -1,0 +1,38 @@
+#
+# AEGIS config.yaml
+#
+# NOTE:
+# - The loader (`backend/src/agent/config.rs`) reads top-level keys: mode, llm, security, audit, database.
+# - Do NOT use a top-level `default:` key: Figment uses `default.*` internally and it will break parsing.
+# - Use top-level `mode:` instead.
+#
+
+# Effective run mode for current loader (development | pilot | production)
+mode: development
+
+llm:
+  mode: cloud          # cloud | local | hybrid | airgapped
+  cloud_provider: grok  # current loader uses `cloud_provider` (not `primary_provider`)
+  local_base_url: "http://localhost:11434/v1"
+  fallback_enabled: true
+  default_model: "qwen2:14b-instruct-q5_K_M"
+
+security:
+  air_gapped: false
+  god_mode_safety_level: strict
+  human_in_the_loop: true
+
+audit:
+  enabled: true
+  immutable: true
+  log_path: "./data/audit.log"
+
+database:
+  sqlite_path: "./data/aegis.db"
+  # Qdrant REST (HTTP): 6333. (6334 is gRPC)
+  qdrant_url: "http://localhost:6333"
+
+vault:
+  enabled: false
+  address: "http://127.0.0.1:8200"
+  token: ""

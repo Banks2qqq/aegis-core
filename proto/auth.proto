@@ -1,0 +1,29 @@
+syntax = "proto3";
+package auth;
+
+service Auth {
+    rpc Authenticate (AuthRequest) returns (AuthResponse);
+    rpc ValidateToken (ValidateTokenRequest) returns (ValidateTokenResponse);
+}
+
+message AuthRequest {
+    string name = 1;
+}
+
+message AuthResponse {
+    string message = 1;
+}
+
+message ValidateTokenRequest {
+    string token_id = 1;
+    string issuer = 2;
+    string subject = 3;
+    uint64 issue_instant = 4;
+    uint64 expiration_time = 5;
+    optional string source_ip = 6;
+    optional string user_agent = 7;
+}
+
+message ValidateTokenResponse {
+    bool is_valid = 1;
+}
