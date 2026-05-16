@@ -107,9 +107,10 @@ export default function ScoutResultToast({
             )}
           </motion.div>
 
-          <motion.p className="text-xs text-[#ddb7ff]/90 font-mono mb-2">
-            {formatScoutIngestLine(result)}
-          </motion.p>
+          <p className="text-xs text-[#ddb7ff]/90 font-mono mb-2">{formatScoutIngestLine(result)}</p>
+          {result.report?.executive_summary_ru && (
+            <p className="text-xs text-white/55 line-clamp-3 mb-2">{result.report.executive_summary_ru}</p>
+          )}
 
           <motion.div className="text-xs text-white/40 font-mono mb-2 space-y-1">
             <motion.div>{new Date(result.completed_at).toLocaleString('ru-RU')}</motion.div>

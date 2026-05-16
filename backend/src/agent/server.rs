@@ -41,6 +41,7 @@ use crate::agent_registry::{AgentDashboardContext, AgentRegistry, ReactRunMeta, 
 use crate::react_service::ReactService;
 use crate::learning_orchestrator::LearningOrchestrator;
 use crate::scout_pipeline;
+use crate::scout_report::{self, ScoutOperatorReport};
 use std::fs;
 use std::path::Path;
 use prometheus::{Encoder, TextEncoder};
@@ -183,6 +184,8 @@ pub struct BduLastScoutMeta {
     pub critic_verdict: String,
     #[serde(default)]
     pub critic_risk: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<ScoutOperatorReport>,
 }
 
 impl AppState {
@@ -1278,6 +1281,8 @@ struct ScoutResponse {
     #[serde(default)]
     total_cves: usize,
     pipeline: Vec<&'static str>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    report: Option<ScoutOperatorReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -1306,6 +1311,7 @@ async fn store_bdu_cache(state: &AppState, outcome: &scout_pipeline::PipelineOut
     cache.items = outcome.vulns.clone();
     cache.items.truncate(20);
     let ingested = outcome.cycle.ingested_ok;
+    let report = scout_report::build_operator_report(outcome, &outcome.scheduled_threats);
     cache.last_scout = Some(BduLastScoutMeta {
         completed_at,
         found: outcome.findings.len(),
@@ -1323,6 +1329,7 @@ async fn store_bdu_cache(state: &AppState, outcome: &scout_pipeline::PipelineOut
         sources_failed: outcome.sources_failed,
         critic_verdict: outcome.cycle.critic_verdict.clone(),
         critic_risk: outcome.cycle.critic_risk,
+        report: Some(report),
     });
 }
 
@@ -1356,6 +1363,12 @@ async fn api_scout(
             let ingested = outcome.cycle.ingested_ok;
             let ingested_new = outcome.cycle.ingested_new;
             let ingested_updated = outcome.cycle.ingested_updated;
+            let operator_report =
+                scout_report::build_operator_report(&outcome, &outcome.scheduled_threats);
+            let _ = tx.send(format!(
+                "[WAR ROOM] {}",
+                operator_report.executive_summary_ru
+            ));
             store_bdu_cache(&state, &outcome, completed_at).await;
             if let Some(audit) = &state.audit {
                 let _ = audit.log_event(
@@ -1429,6 +1442,7 @@ async fn api_scout(
                     total_cves: outcome.total_cves,
                     pipeline: vec![
                         "scout",
+                        "enrichment",
                         "critic",
                         "inquisitor",
                         "ingest",
@@ -1437,6 +1451,7 @@ async fn api_scout(
                         "deception",
                         "war_room",
                     ],
+                    report: Some(operator_report),
                     error: None,
                 }),
             )
@@ -1483,6 +1498,7 @@ fn empty_scout_error(err: &str, completed_at: i64) -> ScoutResponse {
         total_iocs: 0,
         total_cves: 0,
         pipeline: vec![],
+        report: None,
         error: Some(err.to_string()),
     }
 }

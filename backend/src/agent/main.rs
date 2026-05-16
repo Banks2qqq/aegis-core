@@ -27,6 +27,7 @@ pub mod scout;
 pub mod fstec_bdu;
 pub mod scout_pipeline;
 pub mod scout_orchestrator;
+pub mod scout_report;
 pub mod scout_intel;
 pub mod react_service;
 pub mod dna_engine;

@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import Link from 'next/link';
 import { 
   Shield, 
   Users, 
@@ -11,12 +10,11 @@ import {
   Activity, 
   RefreshCw,
   Radar,
-  ExternalLink
 } from 'lucide-react';
 import { ApiClient, type KnowledgeResponse, type StatusResponse } from '../../../lib/api';
 import { useAegisWebSocket } from '../../../lib/useAegisWebSocket';
 import { loadLastScoutRun, type StoredScoutRun } from '../../../lib/scoutStorage';
-import { formatScoutIngestLine } from '../../../lib/scoutSummary';
+import ScoutReportPanel from '../../../components/ScoutReportPanel';
 
 const api = new ApiClient();
 
@@ -26,12 +24,6 @@ function formatLiveEvent(text: string): { kind: 'scout' | 'heal' | 'react' | 'co
   if (text.includes('[ReAct++]')) return { kind: 'react', body: text };
   if (text.includes('[CONTAIN]')) return { kind: 'contain', body: text };
   return { kind: 'other', body: text };
-}
-
-function severityClass(severity: string) {
-  if (severity === 'critical') return 'text-[#ffb4ab]';
-  if (severity === 'high') return 'text-[#fabc4e]';
-  return 'text-white/70';
 }
 
 export default function OverviewWarRoom() {
@@ -178,82 +170,19 @@ export default function OverviewWarRoom() {
         </div>
       )}
 
-      {/* Последний Scout */}
-      <div className="glass-card rounded-3xl p-6 border border-[#00F5A3]/20">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
+      {lastScout && lastScout.status === 'success' ? (
+        <ScoutReportPanel run={lastScout} />
+      ) : (
+        <div className="glass-card rounded-3xl p-6 border border-[#00F5A3]/20">
+          <h3 className="text-lg font-semibold flex items-center gap-2 mb-2">
             <Radar className="w-5 h-5 text-[#00F5A3]" />
-            Последний запуск Scout (ФСТЭК БДУ)
+            Scout 2.0
           </h3>
-          <Link
-            href="/dashboard/bdu"
-            className="text-xs font-mono text-[#00F5A3] hover:underline tracking-widest"
-          >
-            BDU Threat Intel →
-          </Link>
-        </div>
-        {lastScout && lastScout.status === 'success' ? (
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-4 text-sm font-mono">
-              <span className="text-[#00F5A3]">
-                Найдено <strong className="text-xl">{lastScout.found}</strong> уязвимостей
-              </span>
-              <span className="text-white/30">·</span>
-              <span className="text-[#ddb7ff]">{formatScoutIngestLine(lastScout)}</span>
-              <span className="text-white/30">·</span>
-              <span className="text-white/50">
-                {new Date(lastScout.completed_at).toLocaleString('ru-RU')}
-              </span>
-            </div>
-            <motion.div className="flex flex-wrap gap-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              {lastScout.ingested_new != null && (
-                <PipelineChip label="Новых в KB" value={lastScout.ingested_new} color="#ddb7ff" />
-              )}
-              {lastScout.ingested_updated != null && (
-                <PipelineChip label="Обновлено" value={lastScout.ingested_updated} color="#a4c9ff" />
-              )}
-              {lastScout.fusion_updated != null && (
-                <PipelineChip label="Fusion" value={lastScout.fusion_updated} color="#fabc4e" />
-              )}
-              {lastScout.deception_deployed != null && (
-                <PipelineChip label="Honeypots" value={lastScout.deception_deployed} color="#00F5A3" />
-              )}
-              {lastScout.healing_applied != null && (
-                <PipelineChip label="Self-Heal" value={lastScout.healing_applied} color="#ff6b9d" />
-              )}
-              {lastScout.critic_verdict && (
-                <span className="text-xs font-mono px-3 py-1.5 rounded-lg border border-white/10 text-white/50">
-                  Critic: {lastScout.critic_verdict} ({(lastScout.critic_risk ?? 0).toFixed(2)})
-                </span>
-              )}
-            </motion.div>
-            <div className="grid gap-2 md:grid-cols-3">
-              {lastScout.items.slice(0, 3).map((item) => (
-                <a
-                  key={item.id}
-                  href={item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-3 rounded-xl bg-black/40 border border-white/10 hover:border-[#00F5A3]/30 transition-colors group"
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className={`font-mono text-xs uppercase ${severityClass(item.severity)}`}>
-                      {item.severity}
-                    </span>
-                    <ExternalLink className="w-3 h-3 text-white/30 group-hover:text-[#00F5A3]" />
-                  </div>
-                  <div className="font-mono text-xs text-[#00F5A3]">{item.bdu_id}</div>
-                  <div className="text-xs text-white/50 line-clamp-2 mt-1">{item.title}</div>
-                </a>
-              ))}
-            </div>
-          </div>
-        ) : (
           <p className="text-white/50 text-sm">
             Scout ещё не запускался. Нажмите <strong className="text-[#00F5A3]">SCOUT</strong> в шапке.
           </p>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="glass-card rounded-3xl p-8">
         <div className="flex items-center justify-between mb-6">
@@ -292,26 +221,6 @@ export default function OverviewWarRoom() {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function PipelineChip({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}) {
-  return (
-    <div
-      className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10 bg-black/30 text-xs font-mono"
-      style={{ borderColor: `${color}33` }}
-    >
-      <span className="text-white/50">{label}</span>
-      <strong className="text-lg" style={{ color }}>{value}</strong>
     </div>
   );
 }

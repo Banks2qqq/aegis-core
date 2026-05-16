@@ -33,6 +33,8 @@ pub struct PipelineOutcome {
     pub enrichment_merged: usize,
     pub total_iocs: usize,
     pub total_cves: usize,
+    /// Threats passed to background autonomous healing (for structured report).
+    pub scheduled_threats: Vec<crate::scout_orchestrator::ScoutCriticalThreat>,
 }
 
 /// Max wall-clock for the synchronous part of `/api/scout` (healing continues in background).
@@ -238,11 +240,12 @@ async fn run_pipeline_inner(
                         ),
                     );
                 }
+                let threats_for_heal = critical_threats.clone();
                 healing_attempted = schedule_autonomous_healing(
                     heal,
                     registry.clone(),
                     alert_tx.clone(),
-                    critical_threats,
+                    threats_for_heal,
                 );
             }
         } else {
@@ -333,6 +336,7 @@ async fn run_pipeline_inner(
             enrichment_merged: report.enrichment_merged,
             total_iocs: report.total_iocs,
             total_cves: report.total_cves,
+            scheduled_threats: critical_threats,
         })
 }
 

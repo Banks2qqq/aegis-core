@@ -14,7 +14,7 @@ use crate::scout_intel::ScoutFinding;
 static HEALING_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 /// Actionable threat surfaced by Scout (BDU or elevated cycle risk).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ScoutCriticalThreat {
     pub threat_id: String,
     pub title: String,

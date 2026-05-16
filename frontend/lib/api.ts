@@ -77,6 +77,14 @@ export type ScoutResult = {
   total_iocs?: number;
   total_cves?: number;
   pipeline?: string[];
+  sources?: Array<{
+    id: string;
+    label: string;
+    status: string;
+    count: number;
+    note?: string;
+  }>;
+  report?: import('./scoutReport').ScoutOperatorReport;
   error?: string;
 };
 
