@@ -21,6 +21,8 @@ sync_smokes() {
     "${ROOT}/deploy/smoke/integration-demo-e2e.sh" \
     "${ROOT}/deploy/smoke/integration-react-status.sh" \
     "${ROOT}/deploy/smoke/integration-federation-prod-vps.sh" \
+    "${ROOT}/deploy/smoke/integration-scout-honest-10.sh" \
+    "${ROOT}/deploy/smoke/integration-scout-phase4.sh" \
     "${ROOT}/deploy/smoke/smoke-prod-vps.sh" \
     "${USER}@${host}:/opt/aegis/deploy/smoke/"
   ssh -o StrictHostKeyChecking=no "${USER}@${host}" \

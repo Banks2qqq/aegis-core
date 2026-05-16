@@ -102,7 +102,14 @@ if [[ "${SKIP_EXTENDED:-0}" != "1" ]]; then
   [[ -n "${SMOKE_API_KEY:-}" ]] || die "AEGIS_MONITOR_API_KEY missing on primary"
   export FEDERATION_SHARED_SECRET="${FEDERATION_SHARED_SECRET:-$(ssh_h "$PRIMARY" "grep '^FEDERATION_SHARED_SECRET=' /etc/aegis/agent.env | cut -d= -f2- | tr -d '\"'")}"
   [[ -n "${FEDERATION_SHARED_SECRET:-}" ]] || die "FEDERATION_SHARED_SECRET missing on primary agent.env"
-  for s in integration-scout-c1.sh integration-scout-c2.sh integration-federation-prod.sh; do
+  echo "==> phase4 feed mirrors (both nodes)"
+  bash "${DEPLOY}/scout-sync-phase4-feeds.sh" "$PRIMARY"
+  bash "${DEPLOY}/scout-sync-phase4-feeds.sh" "$SECONDARY"
+  for s in \
+    integration-scout-honest-10.sh \
+    integration-scout-c1.sh \
+    integration-scout-c2.sh \
+    integration-federation-prod.sh; do
     echo "--- $s"
     bash "${DEPLOY}/smoke/$s"
   done

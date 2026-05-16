@@ -46,5 +46,9 @@
 ```bash
 export BASE_URL=https://aegis-security.ru
 export SMOKE_API_KEY=...
-bash deploy/smoke/integration-scout-honest-10.sh
+./deploy/scout-sync-phase4-feeds.sh 178.236.16.101   # bundled RSS → /opt/aegis/feeds
+bash deploy/smoke/integration-scout-honest-10.sh      # report + phase4 RU sources
+bash deploy/smoke/integration-scout-phase4.sh       # optional standalone
 ```
+
+Pilot mirrors: `deploy/feeds/*.xml` (обновляйте вручную или замените на реальные RSS с рабочей машины).

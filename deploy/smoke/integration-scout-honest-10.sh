@@ -53,11 +53,20 @@ enrich = report.get("enrichment") or {}
 for k in ("total_iocs", "total_cves"):
     assert k in enrich, f"enrichment.{k}"
 sources = d.get("sources") or []
+by_id = {s.get("id"): s for s in sources if isinstance(s, dict)}
 ok_sources = [s for s in sources if s.get("status") == "ok"]
 assert len(ok_sources) >= 6, f"sources_ok count {len(ok_sources)} < 6"
+for want in ("pt_analytics", "bi_zone", "facct", "rt_solar"):
+    assert want in by_id, f"missing phase4 source {want}"
+    st = by_id[want].get("status")
+    assert st in ("ok", "skipped"), f"{want} status={st}"
+pt = by_id["pt_analytics"]
+if pt.get("status") == "ok":
+    assert int(pt.get("count") or 0) >= 1, "pt_analytics ok but count=0"
 print(
     f"PASS: findings={d.get('found')} sources_ok={len(ok_sources)} "
-    f"top={len(report['top_findings'])} reactions={len(report.get('reactions', []))}"
+    f"top={len(report['top_findings'])} reactions={len(report.get('reactions', []))} "
+    f"pt_analytics={pt.get('status')} count={pt.get('count')}"
 )
 PY
 
