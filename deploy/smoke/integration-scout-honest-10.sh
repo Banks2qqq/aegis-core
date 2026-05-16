@@ -1,54 +1,46 @@
 #!/usr/bin/env bash
 # Scout honest 10/10: structured report in /api/scout response.
 set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck source=lib.sh
-source "${SCRIPT_DIR}/lib.sh"
+source "${ROOT}/deploy/smoke/lib.sh"
 
-need_jwt
-need_cmd curl
-need_cmd python3
+BASE="${BASE_URL:-http://127.0.0.1:8080}"
+API_KEY="${SMOKE_API_KEY:-}"
+[[ -f /etc/aegis/agent.env ]] && API_KEY="${API_KEY:-$(grep '^AEGIS_MONITOR_API_KEY=' /etc/aegis/agent.env | cut -d= -f2- | tr -d '"')}"
+[[ -n "$API_KEY" ]] || die "set SMOKE_API_KEY"
 
+require_tools
 echo "==> Scout honest 10/10 smoke"
-echo "    BASE_URL=${BASE_URL}"
+echo "    BASE=${BASE}"
 
-# Concurrent scout must 409
-code=$(curl -sS -o /dev/null -w "%{http_code}" \
-  -X POST "${BASE_URL}/api/scout" \
-  -H "Authorization: Bearer ${JWT}" \
-  -H "Content-Type: application/json" \
-  -d '{}' \
-  --max-time 2 &
-pid1=$!
-sleep 0.3
-code2=$(curl -sS -o /dev/null -w "%{http_code}" \
-  -X POST "${BASE_URL}/api/scout" \
-  -H "Authorization: Bearer ${JWT}" \
-  -H "Content-Type: application/json" \
-  -d '{}' \
-  --max-time 2 || true)
-wait "$pid1" 2>/dev/null || true
-if [[ "${code2}" == "409" || "${code}" == "409" ]]; then
+body="$(curl -sf -X POST "$BASE/api/login" -H "Content-Type: application/json" -d "{\"api_key\":\"$API_KEY\"}")"
+TOKEN="$(jwt_from_login_body "$body")"
+[[ -n "$TOKEN" ]] || die "login failed"
+auth=( -H "Authorization: Bearer $TOKEN" )
+
+if [[ "${SCOUT_CHECK_CONCURRENT:-0}" == "1" ]]; then
+  curl -sS -o /dev/null -m 3 \
+    "${auth[@]}" -H "Content-Type: application/json" -X POST "$BASE/api/scout" -d '{}' &
+  sleep 0.5
+  code2="$(curl -sS -o /dev/null -w "%{http_code}" \
+    "${auth[@]}" -H "Content-Type: application/json" -X POST "$BASE/api/scout" -d '{}' \
+    --max-time 3 2>/dev/null || true)"
+  [[ "$code2" == "409" ]] || die "expected 409 on concurrent scout, got $code2"
   echo "PASS: concurrent SCOUT returns 409"
-else
-  echo "WARN: concurrent SCOUT codes: ${code} / ${code2} (one may have finished fast)"
+  echo "    waiting for in-flight scout (up to 200s)..."
+  sleep 120
 fi
 
-# Wait for any in-flight scout
-sleep 2
+SCOUT_TMP="$(mktemp)"
+trap 'rm -f "$SCOUT_TMP"' EXIT
+WAIT="${SCOUT_WAIT_SECS:-200}"
+echo "[scout-honest-10] POST /api/scout (wait up to ${WAIT}s)"
+code="$(curl -sS -m "$WAIT" -o "$SCOUT_TMP" -w "%{http_code}" \
+  "${auth[@]}" -H "Content-Type: application/json" -X POST "$BASE/api/scout" -d '{}' || true)"
+[[ "$code" == "200" ]] || die "scout returned $code: $(head -c 500 "$SCOUT_TMP")"
 
-body=$(mktemp)
-trap 'rm -f "$body"' EXIT
-http=$(curl -sS -o "$body" -w "%{http_code}" \
-  -X POST "${BASE_URL}/api/scout" \
-  -H "Authorization: Bearer ${JWT}" \
-  -H "Content-Type: application/json" \
-  -d '{}' \
-  --max-time "${SCOUT_WAIT_SECS:-200}")
-
-[[ "$http" == "200" ]] || die "POST /api/scout HTTP $http: $(head -c 400 "$body")"
-
-python3 - "$body" <<'PY'
+python3 - "$SCOUT_TMP" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
 assert d.get("status") == "success", d
@@ -63,7 +55,10 @@ for k in ("total_iocs", "total_cves"):
 sources = d.get("sources") or []
 ok_sources = [s for s in sources if s.get("status") == "ok"]
 assert len(ok_sources) >= 6, f"sources_ok count {len(ok_sources)} < 6"
-print(f"PASS: findings={d.get('found')} sources_ok={len(ok_sources)} top={len(report['top_findings'])} reactions={len(report.get('reactions', []))}")
+print(
+    f"PASS: findings={d.get('found')} sources_ok={len(ok_sources)} "
+    f"top={len(report['top_findings'])} reactions={len(report.get('reactions', []))}"
+)
 PY
 
 echo "=== integration-scout-honest-10: PASS ==="
