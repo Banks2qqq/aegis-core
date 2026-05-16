@@ -200,9 +200,12 @@ const Terminal = () => {
               </div>
             </div>
           </div>
-          <button className="w-full mt-12 bg-primary-neon/10 border border-primary-neon/20 text-primary-neon py-4 rounded-xl font-display text-[10px] tracking-[0.4em] uppercase hover:bg-primary-neon/20 transition-all">
-            Запустить симуляцию
-          </button>
+          <Link
+            href="/dashboard/login"
+            className="block w-full mt-12 text-center bg-primary-neon/10 border border-primary-neon/20 text-primary-neon py-4 rounded-xl font-display text-[10px] tracking-[0.4em] uppercase hover:bg-primary-neon/20 transition-all"
+          >
+            Войти в панель
+          </Link>
         </div>
       </div>
     </div>
@@ -1469,6 +1472,34 @@ export default function Page() {
 
   const [scrolled, setScrolled] = useState(false);
   const [activeSection, setActiveSection] = useState<(typeof NAV_ITEMS)[number]['id']>('systems');
+  const [publicStats, setPublicStats] = useState<{
+    bdu_records?: number;
+    fusion_clusters?: number;
+    federation_peers?: number;
+    honeypots_active?: number;
+    healing_ready?: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    const client = new ApiClient();
+    client
+      .getPublicStatus()
+      .then((s) => setPublicStats(s))
+      .catch(() => setPublicStats(null));
+  }, []);
+
+  const heroStats = useMemo(
+    () => [
+      { label: 'BDU (ФСТЭК)', value: publicStats?.bdu_records != null ? String(publicStats.bdu_records) : '—' },
+      { label: 'Fusion', value: publicStats?.fusion_clusters != null ? String(publicStats.fusion_clusters) : '—' },
+      { label: 'Federation', value: publicStats?.federation_peers != null ? String(publicStats.federation_peers) : '—' },
+      {
+        label: 'Self-Heal',
+        value: publicStats?.healing_ready ? 'ready' : publicStats ? 'off' : '—',
+      },
+    ],
+    [publicStats],
+  );
 
   // Premium scroll-shrinking navbar
   useEffect(() => {
@@ -1578,7 +1609,7 @@ export default function Page() {
               onClick={() => scrollToId('threat-map')}
               className="hidden md:inline-flex border border-white/10 text-white/70 px-6 py-2.5 rounded-full font-display text-[10px] tracking-widest font-bold uppercase hover:bg-white/5 transition-all"
             >
-              Смотреть демо
+              Панель
             </button>
             <Link
               href="/dashboard/overview"
@@ -1613,21 +1644,16 @@ export default function Page() {
               Записаться на пилот
             </Link>
             <Link
-              href="/dashboard"
+              href="/dashboard/login"
               className="inline-flex items-center justify-center border border-white/15 text-white/90 px-10 py-4 rounded-full font-display text-[11px] tracking-[0.28em] font-bold uppercase bg-white/5 hover:bg-white/10 transition-all"
             >
-              Смотреть демо
+              Панель управления
             </Link>
           </div>
         </motion.div>
 
         <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} className="w-full grid grid-cols-2 md:grid-cols-4 gap-12 border-t border-white/5 pt-16 mb-40">
-          {[
-            { label: 'Задержка', value: '< 100 мс' },
-            { label: 'Точность', value: '99.98%' },
-            { label: 'Узлы', value: '42K+' },
-            { label: 'Аптайм', value: '100%' },
-          ].map((stat, i) => (
+          {heroStats.map((stat, i) => (
             <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="text-center">
               <div className="text-primary-neon font-display text-4xl mb-2 font-bold tracking-tighter">{stat.value}</div>
               <div className="text-outline font-display text-[10px] uppercase tracking-[0.3em] font-bold opacity-60">{stat.label}</div>

@@ -15,7 +15,7 @@
 //! - Immutable audit trail for every step
 //! - Policy engine decides auto vs. human approval
 //!
-//! Current status: MVP skeleton with placeholders. Ready for Patch Generator + Verification integration.
+//! Healing uses AST verification + real Docker sandbox (see sandbox_executor.rs).
 
 use std::sync::Arc;
 
@@ -26,7 +26,6 @@ use crate::config::AEGISConfig;
 use crate::dna_engine::DnaEngine;
 use crate::inquisitor_agent::Inquisitor;
 use crate::distributed_oracle::DistributedOracle;
-use crate::isolation::{AdaptiveIsolation, IsolationLevel, Workload};
 use crate::knowledge::KnowledgeBase;
 use crate::knowledge_item::{KnowledgeItem, KnowledgeType};
 
@@ -293,7 +292,38 @@ impl HealingOrchestrator {
         // 6. Approval Gate (HITL for High/Critical or policy)
         let human_approved = self.approval_gate(&risk, &proposed_patch, verification_report.severity).await?;
 
-        if !human_approved && self.policy.require_hitl_for_high && matches!(risk, PatchRisk::High | PatchRisk::Critical) {
+        let hitl_required = !human_approved
+            && ((self.policy.require_hitl_for_high && matches!(risk, PatchRisk::High | PatchRisk::Critical))
+                || (verification_report.severity > self.policy.min_severity_for_hitl
+                    && matches!(risk, PatchRisk::Medium | PatchRisk::High | PatchRisk::Critical)));
+
+        if hitl_required {
+            let queue = crate::heal_queue::HealQueue::new(self.healing_data_root());
+            let pending = crate::heal_queue::PendingHealPatch {
+                patch_id: patch_id.clone(),
+                content: proposed_patch.clone(),
+                risk: risk.clone(),
+                verification_passed,
+                verification_severity: verification_report.severity,
+                sandbox_passed,
+                anomaly_summary: crate::utils::clip(anomaly_description, 200),
+                queued_at: chrono::Utc::now().timestamp(),
+                status: "pending".into(),
+            };
+            if let Err(e) = queue.enqueue(pending) {
+                tracing::warn!("HealQueue enqueue failed: {}", e);
+            } else {
+                crate::metrics::record_heal_hitl("queued", &format!("{:?}", risk));
+                let _ = self.audit.log_event(
+                    "heal_hitl",
+                    &format!(
+                        "pending_hitl id={} risk={:?} severity={:.2}",
+                        patch_id, risk, verification_report.severity
+                    ),
+                    0.55,
+                    false,
+                );
+            }
             return Ok(HealingResult {
                 patch_id,
                 applied: false,
@@ -303,8 +333,8 @@ impl HealingOrchestrator {
                 sandbox_passed,
                 human_approved: false,
                 rollback_available: true,
-                audit_event: "hitl_denied".to_string(),
-                apply_mode: "skipped".into(),
+                audit_event: "pending_hitl".to_string(),
+                apply_mode: "pending_hitl".into(),
                 patch_path: None,
             });
         }
@@ -629,44 +659,40 @@ impl HealingOrchestrator {
     }
 
     async fn test_in_sandbox(&self, patch: &str, risk: &PatchRisk) -> Result<bool, String> {
-        // Sandbox Executor — использует AdaptiveIsolation (Firecracker для High/Critical).
-        let level = match risk {
-            PatchRisk::Critical => IsolationLevel::Critical,
-            PatchRisk::High => IsolationLevel::High,
-            PatchRisk::Medium => IsolationLevel::Medium,
-            PatchRisk::Low => IsolationLevel::Low,
-        };
-
-        let config = AdaptiveIsolation::for_workload(Workload::ExploitAnalysis);
-        let start = std::time::Instant::now();
+        let level_label = format!("{:?}", risk);
+        let patch_id = uuid::Uuid::new_v4().to_string();
+        let data_root = std::env::var("AEGIS_DATA_ROOT")
+            .unwrap_or_else(|_| "/opt/aegis/backend/data".into());
+        let executor = crate::sandbox_executor::SandboxExecutor::new(&data_root);
 
         tracing::info!(
-            "SandboxExecutor: starting test at level={:?} (runtime={}, mem={}MB, cpu={}) — patch excerpt: {}",
-            level,
-            config.runtime,
-            config.memory_mb,
-            config.cpu_cores,
+            "SandboxExecutor: starting docker validation level={} patch_id={} excerpt={}",
+            level_label,
+            patch_id,
             &crate::utils::clip(patch, 120)
         );
 
-        // В реальной реализации:
-        // 1. spawn Firecracker microVM
-        // 2. apply patch inside VM
-        // 3. run health-checks / tests
-        // 4. collect result + duration
+        let outcome = executor
+            .test_patch(&patch_id, patch, &level_label)
+            .await;
 
-        // Для MVP: считаем, что тест прошёл успешно (логирование + метрика дают наблюдаемость).
-        let duration = start.elapsed().as_secs_f64();
+        if outcome.passed {
+            tracing::info!(
+                "SandboxExecutor: completed runtime={} duration={:.2}s result=PASS detail={}",
+                outcome.runtime,
+                outcome.duration_secs,
+                outcome.detail
+            );
+        } else {
+            tracing::warn!(
+                "SandboxExecutor: completed runtime={} duration={:.2}s result=FAIL detail={}",
+                outcome.runtime,
+                outcome.duration_secs,
+                outcome.detail
+            );
+        }
 
-        tracing::info!(
-            "SandboxExecutor: test completed level={:?} duration={:.2}s result=PASS",
-            level, duration
-        );
-
-        // Метрика (можно расширить)
-        crate::metrics::healing_sandbox_test(duration, &format!("{:?}", level));
-
-        Ok(true)
+        Ok(outcome.passed)
     }
 
     async fn approval_gate(&self, risk: &PatchRisk, _patch: &str, severity: f64) -> Result<bool, String> {

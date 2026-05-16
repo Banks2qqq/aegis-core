@@ -39,6 +39,10 @@ pub struct HoneypotInstance {
     pub isolation: IsolationLevel,
     pub started_at: i64,
     pub interactions: u64,
+    /// `docker` = nginx container; `memory` = registry only (no listener).
+    pub runtime: String,
+    pub container_name: String,
+    pub canary: String,
 }
 
 /// Dynamic Deception Engine — генерирует правдоподобный контент.
@@ -293,34 +297,45 @@ impl HoneypotManager {
         }
     }
 
-    /// Создаёт и запускает новую ловушку с Firecracker + embedded Canary token.
+    /// Создаёт ловушку: Docker nginx listener (H2) или memory registry fallback.
     pub async fn spawn(&self, htype: HoneypotType, port: u16) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let config = AdaptiveIsolation::for_workload(Workload::Deceiver);
-
-        // Встраиваем canary token в контент ловушки
-        let canary = DynamicDeceptionEngine::generate_canary_token();
-        let _content = DynamicDeceptionEngine::generate_fake_content(&htype);
+        let data_root = std::env::var("AEGIS_DATA_ROOT")
+            .unwrap_or_else(|_| "/opt/aegis/backend/data".into());
+        let deception = crate::deception_runtime::DeceptionRuntime::new(&data_root);
+        let listener = deception
+            .spawn_listener(&id, &htype, port)
+            .await?;
 
         let instance = HoneypotInstance {
             id: id.clone(),
             htype: htype.clone(),
-            ip: "0.0.0.0".to_string(),
-            port,
+            ip: "127.0.0.1".to_string(),
+            port: listener.port,
             isolation: config.level,
             started_at: chrono::Utc::now().timestamp(),
             interactions: 0,
+            runtime: listener.runtime.clone(),
+            container_name: listener.container_name.clone(),
+            canary: listener.canary.clone(),
         };
 
-        // Реальная интеграция с Firecracker (через AdaptiveIsolation)
         tracing::info!(
-            "Honeypot spawned with Firecracker: id={} type={:?} port={} isolation={:?} canary={}",
-            id, instance.htype, port, instance.isolation, canary
+            "DeceptionRuntime: honeypot id={} type={:?} runtime={} port={} canary={}",
+            id,
+            instance.htype,
+            instance.runtime,
+            instance.port,
+            instance.canary
         );
 
         let _ = self.audit.log_event(
             "honeypot_manager",
-            &format!("honeypot_spawned id={} type={:?} canary={}", id, instance.htype, canary),
+            &format!(
+                "honeypot_spawned id={} type={:?} runtime={} port={} canary={}",
+                id, instance.htype, instance.runtime, instance.port, instance.canary
+            ),
             0.3,
             true,
         );
@@ -329,38 +344,9 @@ impl HoneypotManager {
         Ok(id)
     }
 
-    /// Реальный запуск Firecracker microVM (Honeypots 2.0).
-    ///
-    /// В продакшене: JSON-конфиг, `firecracker --api-sock`, rootfs/kernel, сеть.
-    /// Сейчас — безопасная заглушка: регистрация экземпляра + аудит.
+    /// Legacy alias — delegates to [`Self::spawn`] (Docker listener or memory fallback).
     pub async fn spawn_firecracker(&self, htype: HoneypotType, port: u16) -> Result<String, String> {
-        let id = uuid::Uuid::new_v4().to_string();
-
-        tracing::info!(
-            "Honeypots 2.0: Firecracker VM spawned id={} type={:?} port={}",
-            id, htype, port
-        );
-
-        let instance = HoneypotInstance {
-            id: id.clone(),
-            htype: htype.clone(),
-            ip: "172.16.0.2".to_string(),
-            port,
-            isolation: IsolationLevel::Critical,
-            started_at: chrono::Utc::now().timestamp(),
-            interactions: 0,
-        };
-
-        self.instances.lock().await.push(instance);
-
-        let _ = self.audit.log_event(
-            "honeypots_2.0",
-            &format!("firecracker_spawned id={} type={:?} port={}", id, htype, port),
-            0.5,
-            true,
-        );
-
-        Ok(id)
+        self.spawn(htype, port).await
     }
 
     /// Логирует взаимодействие и пытается извлечь TTP.
@@ -441,7 +427,7 @@ impl HoneypotManager {
                 Ok(id) => {
                     deployed.push(id.clone());
                     tracing::info!(
-                        "Advanced Deception: auto-deployed {:?} honeypot id={} port={}",
+                        "DeceptionRuntime: auto-deployed {:?} id={} port={}",
                         htype, id, port
                     );
                     if let Ok(token) = self.deploy_canary(&format!("auto_{}", id)).await {

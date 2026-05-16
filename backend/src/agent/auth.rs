@@ -52,6 +52,8 @@ pub struct AuthState {
     /// In-memory revocation list for refresh tokens (jti) + их exp (для GC/TTL).
     /// В Enterprise-версии заменить на SQLite/Redis (revoked_at + expires_at).
     pub revoked_refresh_jti: Arc<std::sync::Mutex<HashMap<String, i64>>>,
+    /// Pepper for API key hashing (JWT secret bytes).
+    pub api_key_pepper: Vec<u8>,
 }
 
 pub struct AuthUser(pub Claims);
@@ -145,6 +147,10 @@ pub fn init_auth_state(secret: &[u8]) -> Arc<AuthState> {
             CREATE INDEX IF NOT EXISTS idx_refresh_revocations_expires_at ON refresh_revocations(expires_at);
             ",
         );
+        let _ = crate::api_key_store::init_schema(&conn);
+        if let Err(e) = crate::api_key_store::migrate_env_keys_once(&auth_db_path, secret) {
+            tracing::warn!("api_key_store env migrate: {}", e);
+        }
     }
 
     Arc::new(AuthState {
@@ -157,6 +163,7 @@ pub fn init_auth_state(secret: &[u8]) -> Arc<AuthState> {
         auth_db_path,
         revoked_access_jti: Arc::new(std::sync::Mutex::new(HashSet::new())),
         revoked_refresh_jti: Arc::new(std::sync::Mutex::new(HashMap::new())),
+        api_key_pepper: secret.to_vec(),
     })
 }
 
@@ -186,33 +193,60 @@ pub async fn login(
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
-    let monitor_key = std::env::var("AEGIS_MONITOR_API_KEY").ok();
-    let dashboard_key = std::env::var("AEGIS_DASHBOARD_API_KEY").ok();
+    let identity = {
+        let db_path = state.auth_db_path.clone();
+        let key = payload.api_key.clone();
+        let pepper = state.api_key_pepper.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::api_key_store::lookup_identity(&db_path, &key, &pepper)
+        })
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    };
 
-    let (uid, tier) = match payload.api_key.as_str() {
-        "test-key-starter" if is_dev => ("user-1", "starter"),
-        "test-key-pro" if is_dev => ("user-2", "pro"),
-        "test-key-enterprise" if is_dev => ("user-3", "enterprise"),
-        key if monitor_key.as_deref() == Some(key) => ("monitor", "monitor"),
-        key if dashboard_key.as_deref() == Some(key) => ("dashboard", "enterprise"),
-        _ => {
-            eprintln!("[SECURITY] Login rejected (dev_mode={})", is_dev);
-            return Err(StatusCode::UNAUTHORIZED);
+    let (uid, tier, scopes) = if let Some(id) = identity {
+        (id.sub, id.tier, id.scopes)
+    } else {
+        match payload.api_key.as_str() {
+            "test-key-starter" if is_dev => (
+                "user-1".to_string(),
+                "starter".to_string(),
+                vec!["starter".to_string(), "read".to_string(), "threats".to_string()],
+            ),
+            "test-key-pro" if is_dev => (
+                "user-2".to_string(),
+                "pro".to_string(),
+                vec!["pro".to_string(), "read".to_string(), "threats".to_string()],
+            ),
+            "test-key-enterprise" if is_dev => (
+                "user-3".to_string(),
+                "enterprise".to_string(),
+                vec![
+                    "enterprise".to_string(),
+                    "read".to_string(),
+                    "threats".to_string(),
+                ],
+            ),
+            _ => {
+                tracing::warn!("[SECURITY] Login rejected (dev_mode={})", is_dev);
+                return Err(StatusCode::UNAUTHORIZED);
+            }
         }
     };
 
     let access_token = create_access_token(
-        uid,
-        vec![tier.to_string(), "read".to_string(), "threats".to_string()],
+        &uid,
+        scopes,
         &state,
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let refresh_token = create_refresh_token(uid, &state)
+    let refresh_token = create_refresh_token(&uid, &state)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let refresh_expires_at = (Utc::now() + state.refresh_lifetime).timestamp();
 
-    println!("[AUTH] Issued access+refresh for {} (tier: {})", uid, tier);
+    tracing::info!("[AUTH] Issued access+refresh for {} (tier: {})", uid, tier);
 
     Ok(Json(LoginResponse {
         access_token,

@@ -12,7 +12,8 @@ import {
   HelpCircle,
   LogOut,
   Lock,
-  Database
+  Database,
+  HeartPulse
 } from 'lucide-react';
 import ReactMissionModal from '../../components/ReactMissionModal';
 import ScoutResultToast from '../../components/ScoutResultToast';
@@ -140,6 +141,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     { href: '/dashboard/federation', label: 'Federation', icon: Target, roles: ['operator', 'admin'] },
     { href: '/dashboard/threats', label: 'Threat Intelligence', icon: Target, roles: ['operator', 'admin'] },
     { href: '/dashboard/agents', label: 'ReAct++ Agent', icon: Brain, roles: ['operator', 'admin'] },
+    { href: '/dashboard/healing', label: 'Healing / HITL', icon: HeartPulse, roles: ['operator', 'admin'] },
     { href: '/dashboard/godmode', label: 'God Mode', icon: Terminal, roles: ['admin'] },
   ];
 

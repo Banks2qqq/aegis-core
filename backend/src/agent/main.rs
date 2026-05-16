@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod api_key_store;
 pub mod mtls;
 pub mod knowledge;
 pub mod knowledge_item;
@@ -35,6 +36,7 @@ pub mod key_provider;
 pub mod learning_orchestrator;
 pub mod healing_orchestrator;
 pub mod honeypot_manager;
+pub mod deception_runtime;
 pub mod distributed_oracle;
 pub mod federation;
 pub mod federation_auth;
@@ -45,6 +47,8 @@ pub mod p2p_discovery;
 pub mod ast_verifier;
 pub mod agent_registry;
 pub mod patch_applier;
+pub mod heal_queue;
+pub mod sandbox_executor;
 pub mod contain_enforcer;
 pub mod llm_status;
 
@@ -367,6 +371,18 @@ async fn try_provider(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Загружаем переменные окружения из .env и ПЕРЕЗАПИСЫВАЕМ существующие
     dotenvy::dotenv_override().ok();
+
+    // H5 — offline helper (no server): agent-cli hash-key <plaintext>
+    if std::env::args().nth(1).as_deref() == Some("hash-key") {
+        let plaintext = std::env::args().nth(2).ok_or(
+            "usage: agent-cli hash-key <plaintext>  (requires JWT_SECRET in env for pepper)",
+        )?;
+        let pepper = std::env::var("JWT_SECRET")
+            .map_err(|_| "JWT_SECRET must be set")?;
+        println!("{}", crate::api_key_store::hash_api_key(&plaintext, pepper.as_bytes()));
+        println!("# store hash in api_keys or run agent once to migrate from env");
+        return Ok(());
+    }
 
     // === Tracing (production logging) ===
     tracing_subscriber::fmt()

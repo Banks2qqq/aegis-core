@@ -429,16 +429,74 @@ pub fn healing_patch_generated() {
 /// Records sandbox test duration and level for healing patches.
 pub fn healing_sandbox_test(duration_secs: f64, level: &str) {
     static HEALING_SANDBOX_DURATION: LazyLock<GaugeVec> = LazyLock::new(|| {
-        GaugeVec::new(
+        let g = GaugeVec::new(
             Opts::new(
                 "aegis_healing_sandbox_duration_seconds",
                 "Duration of sandbox test for healing patches",
             ),
             &["level"],
         )
-        .expect("failed to create healing_sandbox_duration gaugevec")
+        .expect("failed to create healing_sandbox_duration gaugevec");
+        let _ = prometheus::default_registry().register(Box::new(g.clone()));
+        g
     });
     HEALING_SANDBOX_DURATION.with_label_values(&[level]).set(duration_secs);
+}
+
+/// Per-run sandbox outcome (docker/off) for honest 10/10 gates.
+pub fn record_healing_sandbox_result(runtime: &str, level: &str, result: &str, duration_secs: f64) {
+    static HEALING_SANDBOX_RESULT: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let c = IntCounterVec::new(
+            Opts::new(
+                "aegis_healing_sandbox_result_total",
+                "Healing patch sandbox validation outcomes",
+            ),
+            &["runtime", "level", "result"],
+        )
+        .expect("metric aegis_healing_sandbox_result_total");
+        let _ = prometheus::default_registry().register(Box::new(c.clone()));
+        c
+    });
+    HEALING_SANDBOX_RESULT
+        .with_label_values(&[runtime, level, result])
+        .inc();
+    healing_sandbox_test(duration_secs, level);
+}
+
+/// H3 — HITL heal queue events (queued / approved / rejected).
+pub fn record_heal_hitl(action: &str, risk: &str) {
+    static HEAL_HITL: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let c = IntCounterVec::new(
+            Opts::new(
+                "aegis_heal_hitl_total",
+                "Human-in-the-loop healing actions",
+            ),
+            &["action", "risk"],
+        )
+        .expect("metric aegis_heal_hitl_total");
+        let _ = prometheus::default_registry().register(Box::new(c.clone()));
+        c
+    });
+    HEAL_HITL.with_label_values(&[action, risk]).inc();
+}
+
+/// H2 — deception listener deploy outcomes (docker / memory).
+pub fn record_deception_listener(runtime: &str, result: &str) {
+    static DECEPTION_LISTENER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+        let c = IntCounterVec::new(
+            Opts::new(
+                "aegis_deception_listener_total",
+                "Deception honeypot listener spawn outcomes",
+            ),
+            &["runtime", "result"],
+        )
+        .expect("metric aegis_deception_listener_total");
+        let _ = prometheus::default_registry().register(Box::new(c.clone()));
+        c
+    });
+    DECEPTION_LISTENER
+        .with_label_values(&[runtime, result])
+        .inc();
 }
 
 /// Increments when a TTP is extracted from a honeypot interaction.

@@ -7,6 +7,24 @@ export type ScoutBduItem = {
   published?: string;
 };
 
+export type PendingHealPatch = {
+  patch_id: string;
+  content: string;
+  risk: string;
+  verification_passed: boolean;
+  verification_severity: number;
+  sandbox_passed: boolean;
+  anomaly_summary: string;
+  queued_at: number;
+  status: string;
+};
+
+export type HealPendingResponse = {
+  status: string;
+  count: number;
+  items: PendingHealPatch[];
+};
+
 export type ContainResult = {
   status: string;
   cluster_id: string;
@@ -603,6 +621,53 @@ export class ApiClient {
 
   containCluster(clusterId: string) {
     return this.request<ContainResult>('/api/contain', { method: 'POST', json: { cluster_id: clusterId } });
+  }
+
+  getHealPending() {
+    return this.request<HealPendingResponse>('/api/heal/pending', { method: 'GET' });
+  }
+
+  approveHeal(patchId: string, note?: string) {
+    return this.request<{ status: string; patch_id: string; applied: boolean; path?: string }>(
+      '/api/heal/approve',
+      { method: 'POST', json: { patch_id: patchId, note: note ?? 'dashboard' } },
+    );
+  }
+
+  rejectHeal(patchId: string, reason?: string) {
+    return this.request<{ status: string; patch_id: string; rejected: boolean }>(
+      '/api/heal/reject',
+      { method: 'POST', json: { patch_id: patchId, reason: reason ?? 'dashboard' } },
+    );
+  }
+
+  runHeal(anomaly: string, patchType = 'code') {
+    return this.request<{
+      status: string;
+      pending_hitl?: boolean;
+      result?: {
+        patch_id: string;
+        applied: boolean;
+        apply_mode: string;
+        audit_event: string;
+        risk: string;
+      };
+    }>('/api/heal/run', {
+      method: 'POST',
+      json: { anomaly, patch_type: patchType },
+    });
+  }
+
+  getPublicStatus() {
+    return this.request<{
+      status: string;
+      version?: string;
+      bdu_records?: number;
+      fusion_clusters?: number;
+      federation_peers?: number;
+      honeypots_active?: number;
+      healing_ready?: boolean;
+    }>('/api/status/public', { method: 'GET' });
   }
 }
 

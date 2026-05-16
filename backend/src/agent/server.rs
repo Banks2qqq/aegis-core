@@ -30,7 +30,7 @@ use crate::persistence::PersistentStore;
 use crate::event_bus::EventBus;
 use crate::fusion_engine::FusionEngine;
 use crate::fstec_bdu::BduVulnerability;
-use crate::honeypot_manager::HoneypotManager;
+use crate::honeypot_manager::{HoneypotManager, HoneypotType};
 use crate::config::AEGISConfig;
 use crate::distributed_oracle::ConsensusLayer;
 use crate::distributed_oracle::DistributedOracle;
@@ -386,13 +386,15 @@ struct AgentStatusResponse {
     critic: f64,
 }
 
-#[allow(dead_code)]
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct PilotRequest {
     name: String,
     company: String,
     email: String,
-    use_case: String,
+    #[serde(default)]
+    phone: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
 }
 
 async fn health_check() -> impl IntoResponse {
@@ -720,9 +722,90 @@ async fn api_sync(State(state): State<AppState>, axum::extract::Query(params): a
 }
 
 async fn api_pilot_request(State(state): State<AppState>, Json(req): Json<PilotRequest>) -> impl IntoResponse {
-    println!("[PILOT] {} ({}) — {}", req.name, req.email, req.company);
-    let _ = state.alert_tx.send(format!("Новая заявка: {} из {}", req.name, req.company));
-    Json(serde_json::json!({"success": true, "message": "Заявка принята."}))
+    let data_root = agent_data_root(&state);
+    let id = uuid::Uuid::new_v4().to_string();
+    let dir = data_root.join("pilot_requests");
+    if let Err(e) = fs::create_dir_all(&dir) {
+        tracing::error!("pilot_request mkdir: {}", e);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "message": "storage error"})),
+        )
+            .into_response();
+    }
+    let record = serde_json::json!({
+        "id": id,
+        "received_at": chrono::Utc::now().timestamp(),
+        "name": req.name,
+        "company": req.company,
+        "email": req.email,
+        "phone": req.phone,
+        "message": req.message,
+    });
+    let path = dir.join(format!("{}.json", id));
+    if let Err(e) = fs::write(&path, serde_json::to_string_pretty(&record).unwrap_or_default()) {
+        tracing::error!("pilot_request write: {}", e);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "message": "storage error"})),
+        )
+            .into_response();
+    }
+    if let Some(audit) = &state.audit {
+        let _ = audit.log_event(
+            "pilot_request",
+            &format!(
+                "id={} name={} company={} email={}",
+                id, req.name, req.company, req.email
+            ),
+            0.15,
+            false,
+        );
+    }
+    let _ = state
+        .alert_tx
+        .send(format!("Новая заявка на пилот: {} ({})", req.name, req.company));
+    Json(serde_json::json!({
+        "success": true,
+        "message": "Заявка принята.",
+        "request_id": id,
+    }))
+    .into_response()
+}
+
+/// Public metrics for landing (no auth, no marketing inflation).
+async fn api_status_public(State(state): State<AppState>) -> impl IntoResponse {
+    let mut bdu_kb_count: u64 = 0;
+    let mut fusion_clusters: u64 = 0;
+    let mut federation_peers: u64 = 0;
+    let mut honeypots_active: u64 = 0;
+
+    if let Some(kb) = &state.kb {
+        bdu_kb_count = kb.count_black_by_source("fstec_bdu").await.unwrap_or(0) as u64;
+    }
+    if let Some(fusion) = &state.fusion {
+        let stats = fusion.get_stats().await;
+        fusion_clusters = stats
+            .get("active_clusters")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+    }
+    if let Some(fed) = &state.federation {
+        federation_peers = fed.configured_peers().len() as u64;
+    }
+    if let Some(hp) = &state.honeypots {
+        honeypots_active = hp.list_active().await.len() as u64;
+    }
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "version": AEGIS_API_VERSION,
+        "bdu_records": bdu_kb_count,
+        "fusion_clusters": fusion_clusters,
+        "federation_peers": federation_peers,
+        "honeypots_active": honeypots_active,
+        "healing_ready": state.healing.is_some(),
+    }))
 }
 
 async fn metrics_handler() -> impl IntoResponse {
@@ -1417,6 +1500,54 @@ fn agent_data_root(state: &AppState) -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("./data"))
 }
 
+#[derive(Deserialize)]
+struct HealSandboxVerifyRequest {
+    patch: Option<String>,
+}
+
+/// POST /api/heal/sandbox-verify — run real Docker sandbox validation (smoke / ops).
+async fn api_heal_sandbox_verify(
+    State(state): State<AppState>,
+    _user: crate::auth::AuthUser,
+    body: Option<Json<HealSandboxVerifyRequest>>,
+) -> impl IntoResponse {
+    let data_root = agent_data_root(&state);
+    let patch_id = format!("sandbox-verify-{}", chrono::Utc::now().timestamp());
+    let content = body
+        .and_then(|Json(b)| b.patch)
+        .unwrap_or_else(|| {
+            format!(
+                "# AEGIS sandbox verify\n# patch_id={}\nenabled=true\n",
+                patch_id
+            )
+        });
+    let executor = crate::sandbox_executor::SandboxExecutor::new(&data_root);
+    let outcome = executor
+        .test_patch(&patch_id, &content, "Low")
+        .await;
+    let status = if outcome.passed {
+        "ok"
+    } else {
+        "failed"
+    };
+    (
+        if outcome.passed {
+            StatusCode::OK
+        } else {
+            StatusCode::UNPROCESSABLE_ENTITY
+        },
+        Json(serde_json::json!({
+            "status": status,
+            "passed": outcome.passed,
+            "runtime": outcome.runtime,
+            "duration_secs": outcome.duration_secs,
+            "detail": outcome.detail,
+            "patch_id": patch_id,
+        })),
+    )
+        .into_response()
+}
+
 /// POST /api/heal/smoke — deterministic patch apply test (staging / smoke).
 async fn api_heal_smoke(
     State(state): State<AppState>,
@@ -1428,6 +1559,23 @@ async fn api_heal_smoke(
         "# AEGIS smoke heal patch\n# patch_id={}\nenabled=true\n",
         patch_id
     );
+    let executor = crate::sandbox_executor::SandboxExecutor::new(&data_root);
+    let sandbox = executor
+        .test_patch(&patch_id, &content, "Low")
+        .await;
+    if !sandbox.passed {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({
+                "status": "sandbox_failed",
+                "patch_id": patch_id,
+                "runtime": sandbox.runtime,
+                "duration_secs": sandbox.duration_secs,
+                "detail": sandbox.detail,
+            })),
+        )
+            .into_response();
+    }
     let enforce = crate::patch_applier::heal_apply_enforced();
     let applier = crate::patch_applier::PatchApplier::new(&data_root);
     let record = match applier.apply_config_patch(&patch_id, &content, enforce) {
@@ -1464,6 +1612,315 @@ async fn api_heal_smoke(
         "applied": applied,
         "enforce": enforce,
         "path": record.path,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct DeceptionDeployRequest {
+    port: Option<u16>,
+    #[serde(rename = "type")]
+    htype: Option<String>,
+}
+
+/// POST /api/deception/deploy — deploy Docker nginx deception listener.
+async fn api_deception_deploy(
+    State(state): State<AppState>,
+    _user: crate::auth::AuthUser,
+    body: Option<Json<DeceptionDeployRequest>>,
+) -> impl IntoResponse {
+    let Some(hp) = &state.honeypots else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "status": "error", "error": "honeypots not configured" })),
+        )
+            .into_response();
+    };
+    let htype = body
+        .as_ref()
+        .and_then(|Json(b)| b.htype.as_deref())
+        .map(parse_honeypot_type)
+        .unwrap_or(HoneypotType::WebAdmin);
+    let port = body
+        .and_then(|Json(b)| b.port)
+        .unwrap_or(19_080);
+    let id = match hp.spawn(htype.clone(), port).await {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "status": "error", "error": e })),
+            )
+                .into_response();
+        }
+    };
+    let instances = hp.list_active().await;
+    let inst = instances
+        .iter()
+        .find(|i| i.id == id)
+        .cloned()
+        .unwrap_or_else(|| instances.last().cloned().unwrap());
+    let data_root = agent_data_root(&state);
+    let deception = crate::deception_runtime::DeceptionRuntime::new(&data_root);
+    let http_ok = deception
+        .verify_local(inst.port, &inst.canary)
+        .await;
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "status": "ok",
+            "id": inst.id,
+            "port": inst.port,
+            "runtime": inst.runtime,
+            "container_name": inst.container_name,
+            "canary": inst.canary,
+            "http_ok": http_ok,
+        })),
+    )
+        .into_response()
+}
+
+#[derive(Deserialize)]
+struct DeceptionCanaryTripRequest {
+    token: String,
+    source: Option<String>,
+}
+
+/// GET /api/heal/pending — HITL queue (sandbox-passed, awaiting human).
+async fn api_heal_pending(
+    State(state): State<AppState>,
+    _user: crate::auth::AuthUser,
+) -> impl IntoResponse {
+    let queue = crate::heal_queue::HealQueue::new(agent_data_root(&state));
+    match queue.list_pending() {
+        Ok(items) => Json(serde_json::json!({
+            "status": "ok",
+            "count": items.len(),
+            "items": items,
+        }))
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "status": "error", "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct HealApproveRequest {
+    patch_id: String,
+    note: Option<String>,
+}
+
+/// POST /api/heal/approve — human approves pending patch → disk apply.
+async fn api_heal_approve(
+    State(state): State<AppState>,
+    user: crate::auth::AuthUser,
+    Json(req): Json<HealApproveRequest>,
+) -> impl IntoResponse {
+    if state.config.as_ref().is_some_and(|c| c.is_air_gapped()) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "status": "error",
+                "error": "air_gapped: heal apply blocked",
+            })),
+        )
+            .into_response();
+    }
+    let data_root = agent_data_root(&state);
+    let queue = crate::heal_queue::HealQueue::new(&data_root);
+    let Some(item) = queue.remove_pending(&req.patch_id).ok().flatten() else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "status": "error",
+                "error": format!("pending patch not found: {}", req.patch_id),
+            })),
+        )
+            .into_response();
+    };
+    let applier = crate::patch_applier::PatchApplier::new(&data_root);
+    let _ = applier.prepare_snapshot();
+    let record = match applier.apply_config_patch(&item.patch_id, &item.content, true) {
+        Ok(r) => r,
+        Err(e) => {
+            let _ = queue.enqueue(item);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "status": "error", "error": e })),
+            )
+                .into_response();
+        }
+    };
+    let risk_label = format!("{:?}", item.risk);
+    crate::metrics::record_heal_hitl("approved", &risk_label);
+    if let Some(audit) = &state.audit {
+        let _ = audit.log_event(
+            "heal_hitl",
+            &format!(
+                "approved id={} by={} note={} path={}",
+                item.patch_id,
+                user.0.sub,
+                req.note.as_deref().unwrap_or("-"),
+                record.path
+            ),
+            0.25,
+            true,
+        );
+    }
+    Json(serde_json::json!({
+        "status": "ok",
+        "patch_id": item.patch_id,
+        "applied": true,
+        "mode": record.mode,
+        "path": record.path,
+        "risk": risk_label,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct HealRejectRequest {
+    patch_id: String,
+    reason: Option<String>,
+}
+
+/// POST /api/heal/reject — remove from HITL queue + audit.
+async fn api_heal_reject(
+    State(state): State<AppState>,
+    user: crate::auth::AuthUser,
+    Json(req): Json<HealRejectRequest>,
+) -> impl IntoResponse {
+    let queue = crate::heal_queue::HealQueue::new(agent_data_root(&state));
+    let Some(item) = queue.remove_pending(&req.patch_id).ok().flatten() else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "status": "error",
+                "error": format!("pending patch not found: {}", req.patch_id),
+            })),
+        )
+            .into_response();
+    };
+    let risk_label = format!("{:?}", item.risk);
+    crate::metrics::record_heal_hitl("rejected", &risk_label);
+    if let Some(audit) = &state.audit {
+        let _ = audit.log_event(
+            "heal_hitl",
+            &format!(
+                "rejected id={} by={} reason={}",
+                item.patch_id,
+                user.0.sub,
+                req.reason.as_deref().unwrap_or("-")
+            ),
+            0.4,
+            false,
+        );
+    }
+    Json(serde_json::json!({
+        "status": "ok",
+        "patch_id": item.patch_id,
+        "rejected": true,
+    }))
+    .into_response()
+}
+
+#[derive(Deserialize)]
+struct HealRunRequest {
+    anomaly: String,
+    #[serde(default)]
+    patch_type: Option<String>,
+}
+
+fn parse_patch_type(s: &str) -> crate::healing_orchestrator::PatchType {
+    match s.to_ascii_lowercase().as_str() {
+        "config" => crate::healing_orchestrator::PatchType::Config,
+        "code" => crate::healing_orchestrator::PatchType::Code,
+        "dependency" => crate::healing_orchestrator::PatchType::Dependency,
+        "isolation" => crate::healing_orchestrator::PatchType::Isolation,
+        "custom" | "critical" => crate::healing_orchestrator::PatchType::Custom,
+        _ => crate::healing_orchestrator::PatchType::Code,
+    }
+}
+
+fn parse_honeypot_type(s: &str) -> HoneypotType {
+    match s.to_ascii_lowercase().as_str() {
+        "database" | "db" => HoneypotType::Database,
+        "api" => HoneypotType::ApiEndpoint,
+        "ssh" => HoneypotType::SshShell,
+        "smb" | "share" => HoneypotType::WindowsShare,
+        _ => HoneypotType::WebAdmin,
+    }
+}
+
+/// POST /api/heal/run — full healing cycle (verify → sandbox → HITL or apply).
+async fn api_heal_run(
+    State(state): State<AppState>,
+    _user: crate::auth::AuthUser,
+    Json(req): Json<HealRunRequest>,
+) -> impl IntoResponse {
+    let anomaly = req.anomaly.trim();
+    if anomaly.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "status": "error", "error": "anomaly required" })),
+        )
+            .into_response();
+    }
+    let Some(healing) = &state.healing else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "status": "error", "error": "healing not configured" })),
+        )
+            .into_response();
+    };
+    let patch_type = req
+        .patch_type
+        .as_deref()
+        .map(parse_patch_type)
+        .unwrap_or(crate::healing_orchestrator::PatchType::Code);
+    match healing.heal(anomaly, patch_type).await {
+        Ok(result) => Json(serde_json::json!({
+            "status": "ok",
+            "result": result,
+            "pending_hitl": result.apply_mode == "pending_hitl",
+        }))
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "status": "error", "error": e })),
+        )
+            .into_response(),
+    }
+}
+
+/// POST /api/deception/canary-trip — simulate canary access (audit + auto-deploy hook).
+async fn api_deception_canary_trip(
+    State(state): State<AppState>,
+    _user: crate::auth::AuthUser,
+    Json(req): Json<DeceptionCanaryTripRequest>,
+) -> impl IntoResponse {
+    let Some(hp) = &state.honeypots else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "status": "error", "error": "honeypots not configured" })),
+        )
+            .into_response();
+    };
+    let source = req.source.as_deref().unwrap_or("smoke");
+    if let Err(e) = hp.track_canary(&req.token, source).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "status": "error", "error": e })),
+        )
+            .into_response();
+    }
+    Json(serde_json::json!({
+        "status": "ok",
+        "token": req.token,
+        "source": source,
     }))
     .into_response()
 }
@@ -1637,6 +2094,11 @@ pub fn create_router(state: AppState) -> Router {
         max_requests: 60,
         window: std::time::Duration::from_secs(60),
     };
+    const RL_STATUS_PUBLIC: RateLimitRule = RateLimitRule {
+        name: "api_status_public",
+        max_requests: 30,
+        window: std::time::Duration::from_secs(60),
+    };
     const RL_METRICS: RateLimitRule = RateLimitRule {
         name: "metrics",
         max_requests: 60,
@@ -1674,6 +2136,16 @@ pub fn create_router(state: AppState) -> Router {
                 RateLimitState {
                     limiter: state.rate_limiter.clone(),
                     rule: RL_PILOT,
+                },
+                rate_limit_middleware,
+            )),
+        )
+        .route(
+            "/api/status/public",
+            get(api_status_public).route_layer(from_fn_with_state(
+                RateLimitState {
+                    limiter: state.rate_limiter.clone(),
+                    rule: RL_STATUS_PUBLIC,
                 },
                 rate_limit_middleware,
             )),
@@ -1754,6 +2226,22 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/scout", axum::routing::post(api_scout))
         .route("/api/bdu/recent", get(api_bdu_recent))
         .route("/api/heal/smoke", axum::routing::post(api_heal_smoke))
+        .route(
+            "/api/heal/sandbox-verify",
+            axum::routing::post(api_heal_sandbox_verify),
+        )
+        .route(
+            "/api/deception/deploy",
+            axum::routing::post(api_deception_deploy),
+        )
+        .route(
+            "/api/deception/canary-trip",
+            axum::routing::post(api_deception_canary_trip),
+        )
+        .route("/api/heal/pending", get(api_heal_pending))
+        .route("/api/heal/approve", axum::routing::post(api_heal_approve))
+        .route("/api/heal/reject", axum::routing::post(api_heal_reject))
+        .route("/api/heal/run", axum::routing::post(api_heal_run))
         .route("/api/contain", axum::routing::post(api_contain))
         .route("/api/ingest", axum::routing::post(api_ingest))
         .route("/api/ingest_darknet", axum::routing::post(api_ingest_darknet))

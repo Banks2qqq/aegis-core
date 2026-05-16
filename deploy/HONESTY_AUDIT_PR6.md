@@ -1,5 +1,7 @@
 # AEGIS Pilot — Honesty audit (PR6.5, one-pager)
 
+> **Superseded for branch A (H1–H8):** see [`HONESTY_AUDIT_v2.md`](HONESTY_AUDIT_v2.md) and `deploy/smoke/honesty-gate.sh` (green on both VPS May 2026).
+
 **Purpose:** what the pilot *actually* gets vs marketing language.
 
 ## Strengths (verified in code + smoke)
@@ -18,7 +20,7 @@
 | Contain | Full network isolation is **policy + optional iptables markers**, not a guaranteed kill switch for all workloads. |
 | Healing | Real file apply is opt-in (`AEGIS_HEAL_APPLY`); default paths favor safety. |
 | Multi-node E2E | **Code + local smoke** validated; **production** two-node still needs second host + shared secret + ops verification. |
-| Auth.rs | Demo API keys are still effectively “dev-shaped”; production should move to stored hashed keys (roadmap). |
+| Auth.rs | **Updated (H5):** hashed keys in SQLite `api_keys`; `test-key-*` blocked when `AEGIS_DEV_MODE=0`. |
 
 ## Pilot success criteria (suggested)
 

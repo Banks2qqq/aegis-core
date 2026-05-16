@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Terminal, ShieldCheck, AlertOctagon, Download, WifiOff } from 'lucide-react';
+import Link from 'next/link';
+import { Terminal, ShieldCheck, Download, WifiOff, HeartPulse } from 'lucide-react';
 import { ApiClient } from '../../../lib/api';
 
 const api = new ApiClient();
@@ -15,9 +16,8 @@ export default function GodMode() {
       await api.toggleAirGap(newState);
       setIsAirGapped(newState);
       alert(newState ? 'ВНИМАНИЕ: Система переведена в изолированный режим (Air-Gapped).' : 'Система выведена из изолированного режима.');
-      // Force reload to update layout header
       window.location.reload();
-    } catch (e) {
+    } catch {
       alert('Ошибка при переключении режима');
     }
   };
@@ -29,10 +29,10 @@ export default function GodMode() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `AEGIS_FSTEK_AUDIT_${new Date().toISOString().slice(0,10)}.json`;
+      a.download = `AEGIS_FSTEK_AUDIT_${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (e) {
+    } catch {
       alert('Ошибка при выгрузке отчета');
     }
   };
@@ -45,7 +45,7 @@ export default function GodMode() {
           <h1 className="text-4xl font-bold tracking-tight">God Mode Terminal</h1>
         </div>
         <div className="flex gap-4">
-          <button 
+          <button
             onClick={downloadReport}
             className="flex items-center gap-2 px-5 py-2 rounded-xl border border-white/20 hover:bg-white/5 text-xs font-mono tracking-widest transition-colors active:scale-[0.985]"
           >
@@ -64,11 +64,10 @@ export default function GodMode() {
             <ShieldCheck className="w-6 h-6 text-[#00F5A3]" />
             <div className="font-mono text-sm tracking-widest">SUPPLY CHAIN VERIFICATION</div>
           </div>
-          <div className="text-white/50 text-sm leading-relaxed">
-            cargo-deny + cargo-audit + formal verification pipeline. 
+          <p className="text-white/50 text-sm leading-relaxed">
+            cargo-deny + cargo-audit + formal verification pipeline.
             All dependencies are continuously scanned for known CVEs and license violations.
-          </div>
-          <button className="mt-8 text-xs font-mono tracking-[3px] px-6 py-3 border border-white/20 rounded-2xl hover:bg-white/5 transition-colors active:scale-[0.985]">RUN FULL AUDIT</button>
+          </p>
         </div>
 
         <div className="glass-card rounded-3xl p-9 border border-[#ffb4ab]/20">
@@ -77,7 +76,7 @@ export default function GodMode() {
               <WifiOff className={`w-6 h-6 ${isAirGapped ? 'text-[#00F5A3]' : 'text-white/40'}`} />
               <div className="font-mono text-sm tracking-widest">AIR-GAPPED MODE</div>
             </div>
-            <button 
+            <button
               onClick={toggleAirGap}
               className={`w-12 h-6 rounded-full transition-colors relative ${isAirGapped ? 'bg-[#00F5A3]' : 'bg-white/20'}`}
             >
@@ -87,14 +86,31 @@ export default function GodMode() {
           <div className={`font-bold text-4xl tracking-tighter mb-2 ${isAirGapped ? 'text-[#00F5A3]' : 'text-white/40'}`}>
             {isAirGapped ? 'ISOLATED' : 'CONNECTED'}
           </div>
-          <div className="text-white/40 text-sm">
-            При включении режима система аппаратно блокирует все внешние сетевые вызовы и переходит на локальные LLM-модели.
-          </div>
+          <p className="text-white/40 text-sm">
+            При включении режима система блокирует внешние вызовы и переходит на локальные LLM-модели.
+          </p>
         </div>
       </div>
 
-      <div className="mt-6 glass-card rounded-3xl p-9 font-mono text-sm text-white/40">
-        Full God Mode CLI and formal verification reports will be available in this terminal.
+      <div className="mt-6 glass-card rounded-3xl p-9 border border-white/10">
+        <div className="flex items-center gap-3 mb-4">
+          <HeartPulse className="w-5 h-5 text-[#ff6b9d]" />
+          <div className="font-mono text-sm tracking-widest">SELF-HEALING / HITL</div>
+        </div>
+        <p className="text-white/45 text-sm mb-6">
+          Очередь патчей, approve/reject и запуск цикла heal — в операционном разделе Healing.
+        </p>
+        <Link
+          href="/dashboard/healing"
+          className="inline-flex text-xs font-mono tracking-widest px-6 py-3 border border-[#ff6b9d]/40 text-[#ff6b9d] rounded-2xl hover:bg-[#ff6b9d]/10"
+        >
+          OPEN HEALING / HITL →
+        </Link>
+      </div>
+
+      <div className="mt-6 glass-card rounded-3xl p-9 font-mono text-sm text-white/40 flex items-center gap-3">
+        <Terminal className="w-5 h-5 text-white/30" />
+        Admin: air-gap, audit export, supply-chain checks
       </div>
     </div>
   );

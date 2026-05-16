@@ -193,10 +193,11 @@ async fn run_healing_batch(
         );
 
         let desc = format!("Scout 2.0 {} ({}): {}", t.source, t.severity, t.title);
-        let patch_type = if t.severity == "critical" {
-            PatchType::Config
-        } else {
-            PatchType::Custom
+        // Risk maps to patch type: Critical/High → HITL queue; Medium/Low → policy auto-apply.
+        let patch_type = match t.severity.to_ascii_lowercase().as_str() {
+            "critical" => PatchType::Custom,
+            "high" => PatchType::Code,
+            _ => PatchType::Config,
         };
 
         let heal_result = tokio::time::timeout(
@@ -220,6 +221,15 @@ async fn run_healing_batch(
                 );
                 if r.applied {
                     applied += 1;
+                } else if r.apply_mode == "pending_hitl" {
+                    emit(
+                        &alert_tx,
+                        format!(
+                            "[HEALING] {} → HITL очередь (patch_id={}) — ожидает approve",
+                            label,
+                            &r.patch_id[..r.patch_id.len().min(36)]
+                        ),
+                    );
                 }
             }
             Ok(Err(e)) => {
