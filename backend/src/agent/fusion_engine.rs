@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,7 @@ pub struct FusedThreat {
 struct UnionFind {
     parent: HashMap<String, String>,
     size: HashMap<String, usize>,
+    created_at: HashMap<String, i64>,
 }
 
 impl UnionFind {
@@ -35,6 +36,7 @@ impl UnionFind {
         Self {
             parent: HashMap::new(),
             size: HashMap::new(),
+            created_at: HashMap::new(),
         }
     }
 
@@ -42,6 +44,7 @@ impl UnionFind {
         if !self.parent.contains_key(x) {
             self.parent.insert(x.to_string(), x.to_string());
             self.size.insert(x.to_string(), 1);
+            self.created_at.insert(x.to_string(), chrono::Utc::now().timestamp());
             return x.to_string();
         }
         let mut current = x.to_string();
@@ -74,6 +77,25 @@ impl UnionFind {
             self.size.insert(px.clone(), self.size[&px] + self.size[&py]);
         }
     }
+
+    /// Очистка старых кластеров (предотвращает утечку памяти)
+    pub fn cleanup_old_clusters(&mut self, max_age_seconds: i64) {
+        let now = chrono::Utc::now().timestamp();
+        
+        // Удаляем кластеры старше max_age_seconds
+        self.created_at.retain(|_, created_at| {
+            now - *created_at < max_age_seconds
+        });
+        
+        // Синхронизируем parent и size с created_at
+        self.parent.retain(|id, _| self.created_at.contains_key(id));
+        self.size.retain(|id, _| self.created_at.contains_key(id));
+        
+        tracing::debug!(
+            "UnionFind cleanup: {} clusters remaining",
+            self.parent.len()
+        );
+    }
 }
 
 /// Streaming Threat Fusion Engine
@@ -84,6 +106,7 @@ pub struct FusionEngine {
     clusters: Arc<RwLock<HashMap<String, Vec<Ioc>>>>, // cluster_id -> IOCs
     source_counts: Arc<RwLock<HashMap<String, usize>>>, // source -> count (HLL approx via set)
     fused_events: Arc<RwLock<Vec<FusedThreat>>>,
+    contained: Arc<RwLock<HashSet<String>>>,
     max_clusters: usize,
 }
 
@@ -94,8 +117,23 @@ impl FusionEngine {
             clusters: Arc::new(RwLock::new(HashMap::new())),
             source_counts: Arc::new(RwLock::new(HashMap::new())),
             fused_events: Arc::new(RwLock::new(Vec::new())),
+            contained: Arc::new(RwLock::new(HashSet::new())),
             max_clusters,
         }
+    }
+
+    /// Пометить кластер как изолированный оператором (POST /api/contain).
+    pub async fn mark_contained(&self, cluster_id: &str) -> bool {
+        let id = cluster_id.trim();
+        if id.is_empty() {
+            return false;
+        }
+        let mut set = self.contained.write().await;
+        set.insert(id.to_string())
+    }
+
+    pub async fn is_contained(&self, cluster_id: &str) -> bool {
+        self.contained.read().await.contains(cluster_id)
     }
 
     /// Ingest finding from any source and perform fusion
@@ -203,6 +241,10 @@ impl FusionEngine {
         let mut clusters = self.clusters.write().await;
         clusters.retain(|id, _| active_cluster_ids.contains(id));
 
+        // Очищаем UnionFind
+        let mut uf = self.uf.write().await;
+        uf.cleanup_old_clusters(max_age_seconds);
+
         let after = events.len();
         if before != after {
             tracing::info!(
@@ -211,5 +253,10 @@ impl FusionEngine {
                 max_age_seconds
             );
         }
+    }
+
+    /// Очистка старых кластеров (предотвращает утечку памяти)
+    pub async fn cleanup_old_clusters(&self, max_age_seconds: i64) {
+        self.prune_old_data(max_age_seconds).await;
     }
 }

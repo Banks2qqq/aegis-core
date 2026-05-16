@@ -1,7 +1,9 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use super::agent_registry::{AgentRegistry, THREAT_HUNTER_ID};
 use super::fusion_engine::FusionEngine;
 use super::tool_registry::ToolRegistry;
 
@@ -24,6 +26,8 @@ pub struct ThreatHunter {
     fusion: Option<Arc<FusionEngine>>,
     air_gapped: bool,
     tool_registry: Option<Arc<ToolRegistry>>,
+    registry: Option<Arc<AgentRegistry>>,
+    enabled_flag: Arc<AtomicBool>,
 }
 
 impl ThreatHunter {
@@ -36,7 +40,15 @@ impl ThreatHunter {
             client: Client::new(),
             fusion: None,
             tool_registry: None,
+            registry: None,
+            enabled_flag: Arc::new(AtomicBool::new(true)),
         }
+    }
+
+    pub fn with_registry(mut self, registry: Arc<AgentRegistry>) -> Self {
+        self.enabled_flag = registry.hunter_enabled_flag();
+        self.registry = Some(registry);
+        self
     }
 
     /// Подключить FusionEngine для корреляции находок в реальном времени
@@ -62,22 +74,64 @@ impl ThreatHunter {
         let interval = self.interval_secs;
         let fusion = self.fusion.clone();
         let air_gapped = self.air_gapped;
+        let registry = self.registry.clone();
+        let enabled_flag = self.enabled_flag.clone();
 
         tokio::spawn(async move {
-            // Первый запуск сразу
-            if air_gapped {
-                Self::hunt_offline(&findings, fusion.clone()).await;
-            } else {
-                Self::hunt_once(&findings, &client, fusion.clone()).await;
+            async fn run_cycle(
+                label: String,
+                air_gapped: bool,
+                findings: &Arc<Mutex<Vec<HuntResult>>>,
+                client: &Client,
+                fusion: &Option<Arc<FusionEngine>>,
+                registry: &Option<Arc<AgentRegistry>>,
+            ) {
+                if let Some(reg) = registry {
+                    reg.mark_running(THREAT_HUNTER_ID, &label).await;
+                }
+                if air_gapped {
+                    ThreatHunter::hunt_offline(findings, fusion.clone()).await;
+                } else {
+                    ThreatHunter::hunt_once(findings, client, fusion.clone()).await;
+                }
+                let n = findings.lock().await.len();
+                if let Some(reg) = registry {
+                    reg.mark_success(
+                        THREAT_HUNTER_ID,
+                        &format!("Hunt complete — {} findings buffered", n),
+                        Some((n.min(100)) as u8),
+                    )
+                    .await;
+                }
             }
+
+            run_cycle(
+                "Initial 7-source hunt cycle".into(),
+                air_gapped,
+                &findings,
+                &client,
+                &fusion,
+                &registry,
+            )
+            .await;
 
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
-                if air_gapped {
-                    Self::hunt_offline(&findings, fusion.clone()).await;
-                } else {
-                    Self::hunt_once(&findings, &client, fusion.clone()).await;
+                if !enabled_flag.load(Ordering::SeqCst) {
+                    if let Some(reg) = &registry {
+                        reg.set_ready(THREAT_HUNTER_ID, "Paused by operator").await;
+                    }
+                    continue;
                 }
+                run_cycle(
+                    "Scheduled hunt cycle (7 OSINT sources)".into(),
+                    air_gapped,
+                    &findings,
+                    &client,
+                    &fusion,
+                    &registry,
+                )
+                .await;
             }
         });
     }
@@ -458,5 +512,9 @@ impl ThreatHunter {
     pub async fn get_findings(&self, limit: usize) -> Vec<HuntResult> {
         let findings = self.findings.lock().await;
         findings.iter().rev().take(limit).cloned().collect()
+    }
+
+    pub async fn findings_count(&self) -> usize {
+        self.findings.lock().await.len()
     }
 }

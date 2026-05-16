@@ -1,0 +1,6 @@
+[Unit]
+Description=Refresh Prometheus JWT bearer token for AEGIS /metrics
+
+[Service]
+Type=oneshot
+ExecStart=/opt/aegis/monitoring/refresh-prometheus-token.sh

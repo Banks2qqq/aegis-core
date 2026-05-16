@@ -1,112 +1,150 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Brain, Play, Pause, Zap, AlertTriangle } from 'lucide-react';
+import { Brain, Target, Zap, Play, Pause } from 'lucide-react';
 import { ApiClient } from '../../../lib/api';
-import ErrorBoundary from '../../../components/ErrorBoundary';
-import LoadingSpinner from '../../../components/LoadingSpinner';
+import { dispatchOpenReactModal } from '../../../lib/aegisEvents';
 
 const api = new ApiClient();
 
-type AgentStatus = {
-  id: string;
-  role: string;
-  status: string;
-  load: number;
-  critic: number;
-};
-
-export default function ReActAgents() {
-  const [agents, setAgents] = useState<AgentStatus[]>([]);
+export default function AgentsPage() {
+  const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>('');
+
+  const loadAgents = async () => {
+    try {
+      const data = await api.getAgents();
+      setAgents(data || []);
+    } catch (error) {
+      console.error('Failed to load agents:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchAgents() {
-      try {
-        setError('');
-        const data = await api.request<AgentStatus[]>('/api/agents', { method: 'GET' });
-        if (!cancelled) setAgents(data);
-      } catch (e) {
-        if (!cancelled) setError('Endpoint not implemented yet: GET /api/agents');
-      } finally {
-        if (!cancelled) setLoading(false);
+    let mounted = true;
+    setTimeout(() => {
+      if (mounted) {
+        loadAgents();
       }
-    }
-
-    fetchAgents();
-    const t = setInterval(fetchAgents, 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
+    }, 0);
+    return () => { mounted = false; };
   }, []);
 
+  const toggleAgent = async (id: string, action: 'start' | 'stop') => {
+    try {
+      const res: any = await api.toggleAgent(id, action);
+      await loadAgents();
+      const label = res?.status === 'active' ? 'запущен' : 'остановлен';
+      alert(`Агент ${id} ${label}`);
+    } catch (error) {
+      alert(`Не удалось ${action === 'start' ? 'запустить' : 'остановить'} агента`);
+    }
+  };
+
+  if (loading) {
+    return <div className="flex justify-center py-20">Загрузка...</div>;
+  }
+
   return (
-    <ErrorBoundary fallbackTitle="AGENTS UI ERROR">
-    <div className="max-w-[1400px] mx-auto">
-      <div className="mb-10">
-        <div className="font-mono text-xs tracking-[4px] text-[#ddb7ff] mb-3">AUTONOMOUS REASONING ENGINE</div>
-        <h1 className="text-6xl font-bold tracking-tighter">ReAct++ Agents</h1>
-        <p className="text-xl text-white/40 mt-3">Thought → Critic → Action • Kill Switch enabled • MCTS optimized</p>
+    <div className="space-y-8">
+      <div>
+        <div className="font-mono text-xs tracking-[4px] text-[#00F5A3] mb-2">AI AGENTS</div>
+        <h1 className="text-4xl font-bold tracking-tight">ReAct++ Agents</h1>
+        <p className="text-white/60 mt-2">ReAct++ • Critic • MCTS • Autonomous Agents</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4 mb-8">
-        {loading && agents.length === 0 && (
-          <div className="md:col-span-2 glass-card rounded-3xl p-10 text-white/40 font-mono">
-            <LoadingSpinner label="Loading agent telemetry..." />
-          </div>
-        )}
-        {!loading && error && (
-          <div className="md:col-span-2 glass-card rounded-3xl p-10 border border-[#ffb4ab]/30">
-            <div className="flex items-center gap-3 text-[#ffb4ab] font-mono tracking-widest text-xs">
-              <AlertTriangle className="w-4 h-4" />
-              {error}
-            </div>
-            <div className="text-white/40 text-sm mt-3">
-              Implement this endpoint in backend (`backend/src/agent/server.rs`) to make the Agents page fully live.
-            </div>
-          </div>
-        )}
-        {agents.map((agent, i) => (
-          <div key={i} className="glass-card rounded-3xl p-8 border-l-4 border-[#ddb7ff]/60">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="font-mono text-xl tracking-[2px]">{agent.id}</div>
-                <div className="text-white/50 text-sm mt-1">{agent.role}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-4xl font-bold tabular-nums tracking-tighter text-[#ddb7ff]">{agent.load}</div>
-                <div className="text-[10px] text-white/40 -mt-1">LOAD</div>
-              </div>
-            </div>
-
-            <div className="mt-8 flex items-center justify-between text-xs font-mono">
-              <div className="px-4 py-1 rounded-full bg-white/5 border border-white/10">{agent.status}</div>
-              <div>CRITIC SCORE: <span className="text-[#00F5A3]">{(agent.critic * 100).toFixed(0)}%</span></div>
-            </div>
-
-            <div className="mt-6 h-px bg-white/10" />
-            
-            <div className="mt-6 flex gap-3">
-              <button className="flex-1 py-3 text-xs tracking-widest border border-white/20 rounded-2xl hover:bg-white/5">VIEW LOGS</button>
-              <button className="flex-1 py-3 text-xs tracking-widest bg-white/10 rounded-2xl hover:bg-white/20">INTERVENE</button>
-            </div>
-          </div>
-        ))}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => dispatchOpenReactModal()}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[#ddb7ff]/40 text-[#ddb7ff] font-mono text-xs tracking-widest hover:bg-[#ddb7ff]/10 transition-all"
+        >
+          <Play className="w-4 h-4" />
+          НОВАЯ REACT++ МИССИЯ
+        </button>
       </div>
 
-      <div className="flex gap-4">
-        <button className="flex items-center gap-3 px-10 py-4 bg-[#ddb7ff] text-black rounded-2xl font-bold tracking-[3px] text-sm">
-          <Play className="w-4 h-4" /> DEPLOY NEW AGENT
-        </button>
-        <button className="flex items-center gap-3 px-10 py-4 border border-white/20 rounded-2xl font-mono text-sm tracking-widest hover:bg-white/5">
-          <Pause className="w-4 h-4" /> PAUSE ALL
-        </button>
+      <div className="grid gap-6">
+        {agents.length > 0 ? (
+          agents.map((agent) => (
+            <div key={agent.id} className="glass-card rounded-3xl p-8">
+              <div className="flex items-start justify-between mb-6">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-[#00F5A3]">
+                      <Brain className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-2xl font-semibold">{agent.name}</h3>
+                    <div className={`px-3 py-1 rounded-full text-xs ${
+                      agent.status === 'active' || agent.status === 'running'
+                        ? 'bg-[#00F5A3]/20 text-[#00F5A3]'
+                        : agent.status === 'error'
+                          ? 'bg-red-500/20 text-red-300'
+                          : 'bg-white/10 text-white/70'
+                    }`}>
+                      {agent.status}
+                    </div>
+                  </div>
+                  <div className="text-white/60 mt-1 font-mono text-sm">{agent.id}</div>
+                </div>
+
+                <button
+                  onClick={() => toggleAgent(agent.id, agent.status === 'active' || agent.status === 'running' ? 'stop' : 'start')}
+                  className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors active:scale-[0.985]"
+                >
+                  {agent.status === 'active' || agent.status === 'running' ? (
+                    <><Pause className="w-4 h-4" /> Остановить</>
+                  ) : (
+                    <><Play className="w-4 h-4" /> Запустить</>
+                  )}
+                </button>
+              </div>
+
+              {/* ReAct++ статус */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-black/40 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <Target className="w-5 h-5 text-[#00F5A3]" />
+                    <div className="font-semibold">ReAct++ Engine</div>
+                  </div>
+                  <div className="text-sm text-white/70 space-y-1">
+                    <div>Текущая задача: <span className="text-white">{agent.current_task || "—"}</span></div>
+                    <div>Итераций: <span className="text-white">{agent.react_iterations || 0}</span></div>
+                  </div>
+                </div>
+
+                <div className="bg-black/40 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <Brain className="w-5 h-5 text-[#8B5CF6]" />
+                    <div className="font-semibold">Critic Agent</div>
+                  </div>
+                  <div className="text-sm text-white/70 space-y-1">
+                    <div>Последняя оценка: <span className="text-white">{agent.last_critic_score || "—"}</span></div>
+                    <div>Решений: <span className="text-white">{agent.critic_decisions || 0}</span></div>
+                  </div>
+                </div>
+
+                <div className="bg-black/40 rounded-2xl p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <Zap className="w-5 h-5 text-[#F59E0B]" />
+                    <div className="font-semibold">MCTS</div>
+                  </div>
+                  <div className="text-sm text-white/70 space-y-1">
+                    <div>Дерево поиска: <span className="text-white">{agent.mcts_nodes || 0}</span> узлов</div>
+                    <div>Лучший путь: <span className="text-white">{agent.best_path_score || "—"}</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="text-center py-20 text-white/50">
+            Нет активных агентов
+          </div>
+        )}
       </div>
     </div>
-    </ErrorBoundary>
   );
 }

@@ -618,11 +618,64 @@ impl KnowledgeBase {
     }
 
     pub async fn count_white(&self) -> Result<usize, String> {
-        self.count_by_type("White").await
+        self.count_by_type("white").await
     }
 
     pub async fn count_black(&self) -> Result<usize, String> {
-        self.count_by_type("Black").await
+        self.count_by_type("black").await
+    }
+
+    pub async fn count_black_by_source(&self, source: &str) -> Result<usize, String> {
+        let sqlite_path = self.sqlite_path.clone();
+        let src = source.to_string();
+        tokio::task::spawn_blocking(move || -> Result<usize, String> {
+            let conn = Connection::open(&sqlite_path).map_err(|e| format!("DB open error: {}", e))?;
+            let count: usize = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM knowledge_items WHERE item_type = 'black' AND source = ?1",
+                    [src],
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("DB query error: {}", e))?;
+            Ok(count)
+        })
+        .await
+        .map_err(|e| format!("DB join error: {}", e))?
+    }
+
+    /// Legacy `documents` table (osint / darknet collections).
+    pub async fn count_legacy_documents(&self, collection: &str) -> Result<usize, String> {
+        let sqlite_path = self.sqlite_path.clone();
+        let col = collection.to_string();
+        tokio::task::spawn_blocking(move || -> Result<usize, String> {
+            let conn = Connection::open(&sqlite_path).map_err(|e| format!("DB open error: {}", e))?;
+            let count: usize = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM documents WHERE collection = ?1",
+                    [col],
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("DB query error: {}", e))?;
+            Ok(count)
+        })
+        .await
+        .map_err(|e| format!("DB join error: {}", e))?
+    }
+
+    /// Recent black-knowledge summaries for dashboard (e.g. ФСТЭК БДУ).
+    pub async fn recent_black_summaries(&self, limit: usize) -> Result<Vec<String>, String> {
+        let items = self.get_all_black().await?;
+        Ok(items
+            .into_iter()
+            .take(limit)
+            .map(|i| {
+                if let Some(s) = i.summary {
+                    format!("{} | {}", i.source, s.chars().take(120).collect::<String>())
+                } else {
+                    format!("{} | {}", i.source, i.content.chars().take(120).collect::<String>())
+                }
+            })
+            .collect())
     }
 
     async fn count_by_type(&self, item_type: &str) -> Result<usize, String> {

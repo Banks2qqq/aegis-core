@@ -1,0 +1,8 @@
+[Unit]
+Description=AEGIS federation alert (secondary node)
+After=network-online.target aegis-agent.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/aegis/federation-alert.env
+ExecStart=/usr/local/bin/check-federation-alert-secondary.sh

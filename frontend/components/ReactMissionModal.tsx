@@ -33,7 +33,7 @@ export default function ReactMissionModal({ isOpen, onClose, onSuccess }: Props)
       setResult(data);
 
       if (data.status === 'accepted') {
-        showToast('MISSION ACCEPTED — ReAct++ agent deployed');
+        showToast('Миссия принята — шаги в War Room (Live)');
         onSuccess(mission.trim());
         setTimeout(() => {
           onClose();
@@ -41,8 +41,8 @@ export default function ReactMissionModal({ isOpen, onClose, onSuccess }: Props)
           setResult(null);
         }, 1400);
       }
-    } catch (err) {
-      setResult({ error: 'Failed to connect to backend' });
+    } catch (err: unknown) {
+      setResult({ error: (err as Error)?.message || 'Ошибка API ReAct' });
     } finally {
       setLoading(false);
     }

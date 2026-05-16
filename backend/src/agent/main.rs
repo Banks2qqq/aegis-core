@@ -23,6 +23,11 @@ pub mod config;
 pub mod safety;
 pub mod audit;
 pub mod scout;
+pub mod fstec_bdu;
+pub mod scout_pipeline;
+pub mod scout_orchestrator;
+pub mod scout_intel;
+pub mod react_service;
 pub mod dna_engine;
 pub mod metrics;
 pub mod utils;
@@ -32,12 +37,19 @@ pub mod healing_orchestrator;
 pub mod honeypot_manager;
 pub mod distributed_oracle;
 pub mod federation;
+pub mod federation_auth;
+pub mod federation_client;
 pub mod autonomous_remediation;
 pub mod moving_target;
 pub mod p2p_discovery;
 pub mod ast_verifier;
+pub mod agent_registry;
+pub mod patch_applier;
+pub mod contain_enforcer;
+pub mod llm_status;
 
 use healing_orchestrator::{HealingOrchestrator, PatchType};
+use learning_orchestrator::LearningOrchestrator;
 use autonomous_remediation::AutonomousRemediation;
 use critic_agent::{CriticAgent, Verdict};
 use inquisitor_agent::{Inquisitor, InquisitorLlm};
@@ -376,6 +388,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::error!("Configuration validation failed: {}", e);
         std::process::exit(1);
     }
+    let config = Arc::new(config);
 
     // === Immutable Audit Trail ===
     let audit = Arc::new(AuditTrail::new(
@@ -457,65 +470,183 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     crate::auth::start_refresh_revocation_gc(auth_state.clone());
 
     // === Фаза 3: ReAct++ Critic + Real Tool Execution ===
-    let critic = CriticAgent::with_config(&api_key, config.is_air_gapped())
-        .with_llm(critic_agent::CriticLlm {
-            http: http_client.clone(),
-            api_key: api_key.clone(), // legacy fallback
-            key_provider: key_provider.clone(),
-            config: Arc::new(config.clone()),
-            local: local_client.clone(),
-        })
-        .with_audit(audit.clone());
-    let inquisitor = Inquisitor::new(config.is_air_gapped())
-        .with_llm(InquisitorLlm {
-            http: http_client.clone(),
-            api_key: api_key.clone(),
-            key_provider: key_provider.clone(),
-            config: Arc::new(config.clone()),
-            local: local_client.clone(),
-        })
-        .with_audit(audit.clone());
+    let critic = Arc::new(
+        CriticAgent::with_config(&api_key, config.is_air_gapped())
+            .with_llm(critic_agent::CriticLlm {
+                http: http_client.clone(),
+                api_key: api_key.clone(), // legacy fallback
+                key_provider: key_provider.clone(),
+                config: config.clone(),
+                local: local_client.clone(),
+            })
+            .with_audit(audit.clone()),
+    );
+    let inquisitor = Arc::new(
+        Inquisitor::new(config.is_air_gapped())
+            .with_llm(InquisitorLlm {
+                http: http_client.clone(),
+                api_key: api_key.clone(),
+                key_provider: key_provider.clone(),
+                config: config.clone(),
+                local: local_client.clone(),
+            })
+            .with_audit(audit.clone()),
+    );
     let tool_registry = Arc::new(create_default_registry(Some(kb.clone()), config.is_air_gapped()));
     tracing::info!("ReAct++ Critic + MCTS + Tool Registry loaded ({} tools)", tool_registry.get_tools_for_prompt().len());
 
-    // === Фаза 3: Federation Layer ===
-    let dna = Arc::new(dna_engine::DnaEngine::new(&config.database.dna_path, audit.clone()));
-    let federation = Arc::new(crate::federation::FederationLayer::new(
+    let scout = Arc::new(
+        scout::Scout::new(
+            tool_registry.clone(),
+            audit.clone(),
+            config.is_air_gapped(),
+        )
+        .with_llm(scout::ScoutLlm {
+            http: http_client.clone(),
+            api_key: api_key.clone(),
+            key_provider: key_provider.clone(),
+            config: config.clone(),
+            local: local_client.clone(),
+        }),
+    );
+    let learning = Arc::new(LearningOrchestrator::new(
+        scout,
+        critic.clone(),
+        inquisitor.clone(),
         kb.clone(),
-        dna.clone(),
         audit.clone(),
+        config.clone(),
+        http_client.clone(),
+        api_key.clone(),
+        local_client.clone(),
     ));
+
+    // === Фаза 3: DNA + Federation (Raft wired after consensus init below) ===
+    let dna = Arc::new(dna_engine::DnaEngine::new(&config.database.dna_path, audit.clone()));
 
     // === Фаза 3.2: Moving Target Defense & Honeypots ===
     let honeypot_manager = Arc::new(crate::honeypot_manager::HoneypotManager::new(kb.clone(), dna.clone(), audit.clone()));
     crate::honeypot_manager::HoneypotManager::init_canary_escalation(&honeypot_manager);
+    let agent_registry = Arc::new(crate::agent_registry::AgentRegistry::new());
+    agent_registry
+        .set_ready(crate::agent_registry::HEALER_ID, "HealingOrchestrator ready")
+        .await;
+
     let mut moving_target = crate::moving_target::MovingTargetDefense::new(audit.clone())
         .with_honeypot_manager(honeypot_manager.clone());
-    moving_target.start_background_mutation(300).await;
+    moving_target
+        .start_background_mutation(300, Some(agent_registry.clone()))
+        .await;
 
     // === Distributed Oracle (Raft) & P2P Discovery ===
-    let oracle = Arc::new(distributed_oracle::DistributedOracle::new(&config.node_id, audit.clone()));
+    let raft = Arc::new(tokio::sync::Mutex::new(distributed_oracle::ConsensusLayer::new(
+        audit.clone(),
+    )));
+    {
+        let mut guard = raft.lock().await;
+        guard.register_node(&config.node_id);
+    }
+    let oracle = Arc::new(distributed_oracle::DistributedOracle::new(
+        &config.node_id,
+        audit.clone(),
+    ));
+    let healing = Arc::new(
+        HealingOrchestrator::new(
+            kb.clone(),
+            dna.clone(),
+            inquisitor.clone(),
+            audit.clone(),
+            config.clone(),
+        )
+        .with_oracle(oracle.clone()),
+    );
     let p2p = crate::p2p_discovery::P2pDiscovery::new(
         &config.node_id,
         audit.clone(),
-        Arc::new(tokio::sync::Mutex::new(oracle.consensus.clone())),
+        raft.clone(),
     );
     p2p.start().await;
 
+    let raft_maintenance = raft.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            let mut guard = raft_maintenance.lock().await;
+            guard.maintain_cluster().await;
+        }
+    });
+
+    let federation = Arc::new(
+        crate::federation::FederationLayer::new(
+            kb.clone(),
+            dna.clone(),
+            audit.clone(),
+            &config.federation,
+            config.node_id.clone(),
+        )
+        .with_raft(raft.clone()),
+    );
+    federation.register_peers_in_raft().await;
+    federation.clone().start_health_monitor(60);
+    if config.federation.sync_interval_secs > 0 {
+        federation
+            .clone()
+            .start_background_sync(config.federation.sync_interval_secs);
+    }
+
     // === Фаза 2: Streaming Threat Fusion + Threat Hunter (dynamic internet research) ===
     let fusion = Arc::new(fusion_engine::FusionEngine::new(1000));
+    
+    // === Очистка старых кластеров (защита от утечки памяти) ===
+    let fusion_clone = fusion.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // каждый час
+        loop {
+            interval.tick().await;
+            // Очищаем кластеры старше 7 дней (86400 * 7)
+            fusion_clone.cleanup_old_clusters(86400 * 7).await;
+        }
+    });
+
+    let react_service = Arc::new(react_service::ReactService::new(
+        critic.clone(),
+        tool_registry.clone(),
+        http_client.clone(),
+        key_provider.clone(),
+        local_client.clone(),
+        config.clone(),
+        audit.clone(),
+    ));
+
     let server_state = AppState::new(store)
         .with_fusion(fusion.clone())
         .with_auth(auth_state.clone())
         .with_audit(audit.clone())
-        .with_federation(federation.clone());
+        .with_federation(federation.clone())
+        .with_kb(kb.clone())
+        .with_learning(learning)
+        .with_honeypots(honeypot_manager.clone())
+        .with_oracle(oracle.clone())
+        .with_healing(healing)
+        .with_config(config.clone())
+        .with_raft(raft)
+        .with_react(react_service)
+        .with_agent_registry(agent_registry.clone());
+    agent_registry
+        .set_ready(crate::agent_registry::SCOUT_ID, "Ready — POST /api/scout")
+        .await;
     let srv_http = server_state.clone();
     tokio::spawn(async move { if let Err(e) = start_server(srv_http).await { eprintln!("[SERVER] {}", e); } });
 
-    let hunter = threat_hunter::ThreatHunter::new(300)
-        .with_fusion(fusion.clone())
-        .with_air_gapped(config.is_air_gapped())
-        .with_tools(tool_registry.clone());
+    let hunter = Arc::new(
+        threat_hunter::ThreatHunter::new(300)
+            .with_fusion(fusion.clone())
+            .with_air_gapped(config.is_air_gapped())
+            .with_tools(tool_registry.clone())
+            .with_registry(agent_registry.clone()),
+    );
+    agent_registry.attach_hunter(hunter.clone()).await;
     hunter.start().await;
     tracing::info!("Threat Hunter: ACTIVE (dynamic internet research)");
     tracing::info!("Fusion Engine: STREAMING CORRELATION ENABLED");
@@ -577,8 +708,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let role = role_clone.lock().await; print!("aegis ({})> ", *role); drop(role); let _ = io::stdout().flush();
         let mut input = String::new();
-        if io::stdin().read_line(&mut input).is_err() {
-            break;
+        let bytes_read = io::stdin().read_line(&mut input).unwrap_or(0);
+        if bytes_read == 0 {
+            // EOF reached (e.g. running in nohup). Sleep to prevent infinite CPU loop.
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            continue;
         }
         let cmd = input.trim();
         if cmd.is_empty() {
@@ -831,7 +965,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 http: http_client.clone(),
                 api_key: api_key.clone(),
                 key_provider: key_provider.clone(),
-                config: Arc::new(config.clone()),
+                config: config.clone(),
                 local: local_client.clone(),
             });
             match scout.run_advanced(&topic).await {
@@ -1546,9 +1680,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let healing = HealingOrchestrator::new(
                 kb.clone(),
                 Arc::new(dna_engine::DnaEngine::new(&config.database.dna_path, audit.clone())),
-                Arc::new(inquisitor.clone()),
+                inquisitor.clone(),
                 audit.clone(),
-                Arc::new(config.clone()),
+                config.clone(),
             )
             .with_oracle(oracle.clone());
 
@@ -1590,9 +1724,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let healing = HealingOrchestrator::new(
                 kb.clone(),
                 Arc::new(dna_engine::DnaEngine::new(&config.database.dna_path, audit.clone())),
-                Arc::new(inquisitor.clone()),
+                inquisitor.clone(),
                 audit.clone(),
-                Arc::new(config.clone()),
+                config.clone(),
             );
 
             let auto = AutonomousRemediation::new(Arc::new(healing), audit.clone());
@@ -1620,11 +1754,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 kb.clone(),
                 Arc::new(dna_engine::DnaEngine::new(&config.database.dna_path, audit.clone())),
                 audit.clone(),
+                &config.federation,
+                config.node_id.clone(),
             );
             
             println!("\n\x1b[36m[FEDERATION]\x1b[0m Синхронизация с {}", url);
             match federation_layer.sync_with_peer(&url).await {
-                Ok(n) => println!("\x1b[32m[FEDERATION SUCCESS]\x1b[0m Синхронизировано записей: {}", n),
+                Ok(n) => println!("\x1b[32m[FEDERATION SUCCESS]\x1b[0m Синхронизировано записей: {}", n.synced),
                 Err(e) => println!("\x1b[31m[FEDERATION ERROR]\x1b[0m Ошибка синхронизации: {}", e),
             }
             continue;

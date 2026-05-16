@@ -1,0 +1,3 @@
+# Copy to .telegram-token and paste NEW token from @BotFather (after /revoke).
+# chmod 600 .telegram-token
+# ./apply-telegram-token.sh

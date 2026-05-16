@@ -1,0 +1,18 @@
+#!/usr/bin/expect -f
+# Usage: VPS_PASSWORD=yourpass ./install_ssl.exp
+set timeout 600
+if {![info exists env(VPS_PASSWORD)]} {
+  puts stderr "Set VPS_PASSWORD"
+  exit 1
+}
+set pass $env(VPS_PASSWORD)
+spawn ssh -o StrictHostKeyChecking=no root@178.236.16.101 bash
+expect "password:" { send "$pass\r" }
+send "apt-get update && apt-get install -y certbot python3-certbot-nginx\r"
+expect -re {[#$\]]}
+send "certbot --nginx -d aegis-security.ru -d www.aegis-security.ru --non-interactive --agree-tos -m admin@aegis-security.ru --redirect\r"
+expect -re {[#$\]]}
+send "systemctl restart nginx\r"
+expect -re {[#$\]]}
+send "exit\r"
+expect eof

@@ -43,9 +43,13 @@ export default function CookieConsent() {
   const [marketing, setMarketing] = useState<boolean>(existing?.marketing ?? false);
 
   useEffect(() => {
+    let mounted = true;
     if (typeof window === 'undefined') return;
     const c = readConsent();
-    if (!c) setVisible(true);
+    setTimeout(() => {
+      if (!c && mounted) setVisible(true);
+    }, 0);
+    return () => { mounted = false; };
   }, []);
 
   const acceptAll = () => {

@@ -1,0 +1,24 @@
+#!/usr/bin/expect -f
+# Usage: VPS_PASSWORD=yourpass ./deploy_to_vps.exp
+set timeout 600
+if {![info exists env(VPS_PASSWORD)]} {
+  puts stderr "Set VPS_PASSWORD"
+  exit 1
+}
+set pass $env(VPS_PASSWORD)
+set root [file dirname [file normalize [info script]]]
+set out [file join $root frontend out]
+
+set host 178.236.16.101
+if {[info exists env(VPS_HOST)]} { set host $env(VPS_HOST) }
+spawn scp -o StrictHostKeyChecking=no -r $out root@${host}:/root/frontend_out
+expect {
+  "password:" { send "$pass\r"; exp_continue }
+  eof
+}
+
+spawn ssh -o StrictHostKeyChecking=no root@${host} "rm -rf /var/www/aegis/html/* && cp -r /root/frontend_out/* /var/www/aegis/html/ && chmod -R 755 /var/www/aegis/html"
+expect {
+  "password:" { send "$pass\r"; exp_continue }
+  eof
+}

@@ -1,0 +1,42 @@
+# Production config for VPS: /opt/aegis/backend/config.yaml
+mode: production
+
+node_id: "aegis-prod-primary"
+
+llm:
+  mode: cloud
+  cloud_provider: grok
+  local_base_url: "http://127.0.0.1:11434/v1"
+  fallback_enabled: true
+  default_model: "grok-3"
+
+security:
+  air_gapped: false
+  god_mode_safety_level: strict
+  human_in_the_loop: true
+
+audit:
+  enabled: true
+  immutable: true
+  log_path: "/opt/aegis/backend/data/audit.log"
+
+database:
+  sqlite_path: "/opt/aegis/backend/data/aegis.db"
+  qdrant_url: "http://127.0.0.1:6333"
+  dna_path: "/opt/aegis/backend/data/aegis_dna.json"
+
+vault:
+  enabled: false
+  address: "http://127.0.0.1:8200"
+  token: ""
+
+# Federation (PR5): set FEDERATION_SHARED_SECRET in /etc/aegis/agent.env on every node.
+# Peers must use the same secret (or per-peer auth_token). Local node is not listed in peers.
+federation:
+  public_url: "https://aegis-security.ru"
+  shared_secret: ""
+  sync_interval_secs: 0
+  mtls_client_cert: ""
+  mtls_client_key: ""
+  mtls_ca_cert: ""
+  peers: []

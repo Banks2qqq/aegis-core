@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ApiClient, getWsBaseUrl } from '../../../lib/api';
+import { ApiClient } from '../../../lib/api';
+import { useAegisWebSocket } from '../../../lib/useAegisWebSocket';
 import ErrorBoundary from '../../../components/ErrorBoundary';
 import LoadingSpinner from '../../../components/LoadingSpinner';
 import {
@@ -63,20 +64,10 @@ export default function DemoTour() {
   const [statuses, setStatuses] = useState<Record<string, StepStatus>>({});
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-    try {
-      ws = new WebSocket(`${getWsBaseUrl()}/ws`);
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          const text = typeof msg.data === 'string' ? msg.data : JSON.stringify(msg.data);
-          setWsLast(`[${msg.type}] ${text}`.slice(0, 220));
-        } catch {}
-      };
-    } catch {}
-    return () => ws?.close();
-  }, []);
+  useAegisWebSocket((msg: any) => {
+    const text = typeof msg?.data === 'string' ? msg.data : JSON.stringify(msg?.data ?? msg);
+    setWsLast(`[${msg?.type}] ${text}`.slice(0, 220));
+  });
 
   const steps: Step[] = useMemo(
     () => [

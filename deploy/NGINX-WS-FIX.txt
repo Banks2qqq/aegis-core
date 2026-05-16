@@ -1,0 +1,58 @@
+# Если SSH таймаут — вставьте в КОНСОЛЬ Beget (root), блок целиком:
+
+cat > /etc/nginx/conf.d/aegis-ws-map.conf << 'EOF'
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+EOF
+
+cat > /etc/nginx/sites-available/aegis << 'EOF'
+server {
+    listen 80;
+    server_name aegis-security.ru;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name aegis-security.ru;
+
+    ssl_certificate /etc/letsencrypt/live/aegis-security.ru/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/aegis-security.ru/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    root /var/www/aegis/html;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+
+    location /ws {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+        proxy_buffering off;
+    }
+
+    location / {
+        try_files $uri $uri.html $uri/ /index.html;
+    }
+}
+EOF
+
+ln -sf /etc/nginx/sites-available/aegis /etc/nginx/sites-enabled/aegis
+rm -f /etc/nginx/sites-enabled/default
+nginx -t && systemctl reload nginx
+systemctl is-active aegis-agent
+curl -sS -o /dev/null -w "backend:%{http_code}\n" http://127.0.0.1:8080/health

@@ -8,6 +8,7 @@
 
 use std::sync::Arc;
 
+use crate::agent_registry::{AgentRegistry, MTD_ID};
 use crate::audit::AuditTrail;
 use crate::honeypot_manager::HoneypotManager;
 
@@ -86,34 +87,72 @@ impl MovingTargetDefense {
     }
 
     /// Запускает фоновую задачу, которая периодически меняет поверхность атаки
-    pub async fn start_background_mutation(&mut self, interval_secs: u64) {
+    pub async fn start_background_mutation(
+        &mut self,
+        interval_secs: u64,
+        registry: Option<Arc<AgentRegistry>>,
+    ) {
         let audit = self.audit.clone();
         let honeypot_manager = self.honeypot_manager.clone();
-        
+
+        if let Some(reg) = &registry {
+            reg.set_ready(
+                MTD_ID,
+                &format!("Background mutation every {}s", interval_secs),
+            )
+            .await;
+        }
+
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_secs));
-            
+
             loop {
                 interval.tick().await;
-                
-                // Меняем fingerprint
+
+                if let Some(reg) = &registry {
+                    reg.mark_running(MTD_ID, "Surface mutation + honeypot deploy").await;
+                }
+
                 let new_fingerprint = format!("mtf_{}", &uuid::Uuid::new_v4().to_string()[..8]);
-                
+
                 let _ = audit.log_event(
                     "moving_target",
                     &format!("background_mutation fingerprint={}", new_fingerprint),
                     0.2,
                     true,
                 );
-                
-                tracing::info!("Moving Target Defense (background): fingerprint rotated to {}", new_fingerprint);
 
-                if let Some(hm) = &honeypot_manager {
-                    let _ = hm.auto_deploy_honeypots(0.6).await; // Средний риск при фоновой мутации
+                tracing::info!(
+                    "Moving Target Defense (background): fingerprint rotated to {}",
+                    new_fingerprint
+                );
+
+                let deployed = if let Some(hm) = &honeypot_manager {
+                    hm.auto_deploy_honeypots(0.6)
+                        .await
+                        .map(|ids| ids.len())
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+
+                if let Some(reg) = &registry {
+                    reg.mark_success(
+                        MTD_ID,
+                        &format!(
+                            "Fingerprint {} | honeypots deployed: {}",
+                            new_fingerprint, deployed
+                        ),
+                        Some((deployed.min(100)) as u8),
+                    )
+                    .await;
                 }
             }
         });
-        
-        tracing::info!("Moving Target Defense: background mutation started (interval={}s)", interval_secs);
+
+        tracing::info!(
+            "Moving Target Defense: background mutation started (interval={}s)",
+            interval_secs
+        );
     }
 }

@@ -1,0 +1,83 @@
+{
+  "uid": "aegis-federation",
+  "title": "AEGIS Federation",
+  "timezone": "browser",
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Peer status (2=online, 1=degraded, 0=offline)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "aegis_federation_peer_status",
+          "legendFormat": "{{peer_id}}"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 2,
+      "title": "Probe latency (ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "aegis_federation_peer_latency_ms",
+          "legendFormat": "{{peer_id}}"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 3,
+      "title": "Sync success rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(aegis_federation_sync_total{result=\"success\"}[5m])) by (peer_id)",
+          "legendFormat": "{{peer_id}} ok"
+        },
+        {
+          "expr": "sum(rate(aegis_federation_sync_total{result=\"error\"}[5m])) by (peer_id)",
+          "legendFormat": "{{peer_id}} err"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 4,
+      "title": "Sync duration p95",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(aegis_federation_sync_duration_seconds_bucket[5m])) by (le, peer_id))",
+          "legendFormat": "{{peer_id}}"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 5,
+      "title": "mTLS handshakes",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(aegis_federation_mtls_inbound_total[5m])) by (result)",
+          "legendFormat": "inbound {{result}}"
+        },
+        {
+          "expr": "sum(rate(aegis_federation_mtls_outbound_total[5m])) by (peer_id, result)",
+          "legendFormat": "out {{peer_id}} {{result}}"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

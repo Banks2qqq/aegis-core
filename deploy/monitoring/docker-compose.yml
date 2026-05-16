@@ -1,0 +1,46 @@
+# AEGIS observability stack on primary VPS (Docker).
+# Prometheus scrapes agent /metrics; Grafana dashboards; Uptime Kuma external probes.
+services:
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: aegis-prometheus
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /etc/aegis/monitoring:/etc/aegis/monitoring:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.listen-address=127.0.0.1:9090
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    container_name: aegis-grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: aegis-uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  uptime_kuma_data:

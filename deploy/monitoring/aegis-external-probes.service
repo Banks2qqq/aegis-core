@@ -1,0 +1,6 @@
+[Unit]
+Description=AEGIS external federation probes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/aegis-external-probes.sh

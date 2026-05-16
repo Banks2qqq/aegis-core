@@ -13,4 +13,20 @@ backend/target/
 # Системные файлы
 .DS_Store
 *.env
+.env.local
+frontend/frontend.log
+backend/data/audit.log
+backend/aegis_persistent.db*
+backend/*.db-shm
+backend/*.db-wal
+*.exp.bak
+test_sed.rs.bak
 *.node
+deploy/federation-certs/
+*.exp.bak
+/etc/aegis/
+**/federation-alert.env
+**/monitoring.env
+deploy/federation-alert/.telegram-token
+deploy/.scout-ti-keys.env
+**/uptime-kuma.env

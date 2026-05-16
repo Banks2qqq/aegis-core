@@ -95,6 +95,102 @@ impl Default for VaultConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FederationPeerConfig {
+    pub id: String,
+    /// Public HTTPS base (health, dashboard). Default :443.
+    pub url: String,
+    /// Federation mTLS listener (e.g. `:8443`). Falls back to `url` when unset.
+    #[serde(default)]
+    pub federation_url: Option<String>,
+    /// Optional per-peer token (overrides federation.shared_secret).
+    #[serde(default)]
+    pub auth_token: Option<String>,
+    #[serde(default)]
+    pub mtls: bool,
+}
+
+impl FederationPeerConfig {
+    pub fn health_base(&self) -> String {
+        self.url.trim_end_matches('/').to_string()
+    }
+
+    pub fn federation_base(&self) -> String {
+        self.federation_url
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.trim_end_matches('/').to_string())
+            .unwrap_or_else(|| self.health_base())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FederationConfig {
+    /// This node's public base URL (for peer configs pointing here).
+    #[serde(default)]
+    pub public_url: Option<String>,
+    /// Node-to-node auth; falls back to env `FEDERATION_SHARED_SECRET`.
+    #[serde(default)]
+    pub shared_secret: Option<String>,
+    /// Background sync interval; 0 = disabled.
+    #[serde(default)]
+    pub sync_interval_secs: u64,
+    #[serde(default)]
+    pub mtls_client_cert: Option<String>,
+    #[serde(default)]
+    pub mtls_client_key: Option<String>,
+    #[serde(default)]
+    pub mtls_ca_cert: Option<String>,
+    #[serde(default)]
+    pub peers: Vec<FederationPeerConfig>,
+}
+
+impl FederationConfig {
+    /// Local federation mTLS listener (default :8443 on same host as `public_url`).
+    pub fn federation_listen_url(&self) -> Option<String> {
+        let base = self.public_url.as_ref()?.trim();
+        if base.is_empty() {
+            return None;
+        }
+        let base = base.trim_end_matches('/');
+        if base.contains(":8443") {
+            return Some(base.to_string());
+        }
+        Some(format!("{base}:8443"))
+    }
+
+    pub fn effective_shared_secret(&self) -> Option<String> {
+        if let Some(s) = &self.shared_secret {
+            let t = s.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
+            }
+        }
+        std::env::var("FEDERATION_SHARED_SECRET")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// All valid inbound/outbound federation tokens (global + per-peer).
+    pub fn accepted_tokens(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(s) = self.effective_shared_secret() {
+            out.push(s);
+        }
+        for p in &self.peers {
+            if let Some(t) = &p.auth_token {
+                let t = t.trim();
+                if !t.is_empty() && !out.iter().any(|x| x == t) {
+                    out.push(t.to_string());
+                }
+            }
+        }
+        out
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AEGISConfig {
     #[serde(default = "default_node_id")]
     pub node_id: String,
@@ -105,6 +201,8 @@ pub struct AEGISConfig {
     pub audit: AuditConfig,
     #[serde(default)]
     pub vault: VaultConfig,
+    #[serde(default)]
+    pub federation: FederationConfig,
 }
 
 fn default_node_id() -> String {
@@ -160,6 +258,7 @@ impl Default for AEGISConfig {
                 immutable: true,
             },
             vault: VaultConfig::default(),
+            federation: FederationConfig::default(),
         }
     }
 }

@@ -1,0 +1,5 @@
+# AEGIS bootstrap — Cisco Talos IP reputation (RFC 5737 TEST-NET placeholders).
+# Replace via: deploy/scout-sync-talos-feed.sh or TALOS_BLOCKLIST_URL when official feed is reachable.
+192.0.2.10
+192.0.2.11
+192.0.2.12

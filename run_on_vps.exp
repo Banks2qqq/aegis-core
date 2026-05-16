@@ -1,0 +1,13 @@
+#!/usr/bin/expect -f
+# Usage: VPS_PASSWORD=yourpass ./run_on_vps.exp
+set timeout 60
+if {![info exists env(VPS_PASSWORD)]} {
+  puts stderr "Set VPS_PASSWORD"
+  exit 1
+}
+set pass $env(VPS_PASSWORD)
+spawn ssh -o StrictHostKeyChecking=no root@178.236.16.101 {*}$argv
+expect {
+  "password:" { send "$pass\r"; exp_continue }
+  eof
+}

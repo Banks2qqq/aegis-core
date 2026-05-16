@@ -181,19 +181,22 @@ pub async fn login(
     Extension(state): Extension<Arc<AuthState>>,
     Json(payload): Json<LoginRequest>
 ) -> Result<Json<LoginResponse>, StatusCode> {
-    // ZERO-TRUST: Test keys allowed ONLY in development mode
-    let is_dev = std::env::var("AEGIS_DEV_MODE").map(|v| v == "1").unwrap_or(false);
+    // ZERO-TRUST: test keys only when AEGIS_DEV_MODE=1; production keys from env (chmod 600 agent.env).
+    let is_dev = std::env::var("AEGIS_DEV_MODE")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    let monitor_key = std::env::var("AEGIS_MONITOR_API_KEY").ok();
+    let dashboard_key = std::env::var("AEGIS_DASHBOARD_API_KEY").ok();
 
     let (uid, tier) = match payload.api_key.as_str() {
         "test-key-starter" if is_dev => ("user-1", "starter"),
         "test-key-pro" if is_dev => ("user-2", "pro"),
         "test-key-enterprise" if is_dev => ("user-3", "enterprise"),
-        _key => {
-            // В реальной Enterprise-системе здесь будет проверка Argon2-хеша ключа из БД
-            // Для production все ключи должны храниться в зашифрованном виде
-            if !is_dev {
-                eprintln!("[SECURITY] Production login attempt with unknown key rejected");
-            }
+        key if monitor_key.as_deref() == Some(key) => ("monitor", "monitor"),
+        key if dashboard_key.as_deref() == Some(key) => ("dashboard", "enterprise"),
+        _ => {
+            eprintln!("[SECURITY] Login rejected (dev_mode={})", is_dev);
             return Err(StatusCode::UNAUTHORIZED);
         }
     };

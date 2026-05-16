@@ -1,6 +1,6 @@
 //! Prometheus metrics for Scout → Critic → Inquisitor → Ingest → DNA self-learning cycle.
 
-use prometheus::{Gauge, GaugeVec, IntCounter, IntCounterVec, Opts};
+use prometheus::{Gauge, GaugeVec, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, Opts};
 use std::sync::LazyLock;
 
 use crate::knowledge_item::{KnowledgeItem, KnowledgeType};
@@ -488,4 +488,225 @@ pub fn raft_phase(phase: &'static str) {
         c
     });
     RAFT_PHASE.with_label_values(&[phase]).inc();
+}
+
+// --- Federation (mTLS + sync) ---
+
+static FEDERATION_MTLS_INBOUND: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    let c = IntCounterVec::new(
+        Opts::new(
+            "aegis_federation_mtls_inbound_total",
+            "Inbound federation requests on :8443 by TLS client verify outcome",
+        ),
+        &["result"],
+    )
+    .expect("metric aegis_federation_mtls_inbound_total");
+    let _ = prometheus::default_registry().register(Box::new(c.clone()));
+    c
+});
+
+static FEDERATION_MTLS_OUTBOUND: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    let c = IntCounterVec::new(
+        Opts::new(
+            "aegis_federation_mtls_outbound_total",
+            "Outbound federation peer calls by result",
+        ),
+        &["peer_id", "result"],
+    )
+    .expect("metric aegis_federation_mtls_outbound_total");
+    let _ = prometheus::default_registry().register(Box::new(c.clone()));
+    c
+});
+
+static FEDERATION_SYNC: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    let c = IntCounterVec::new(
+        Opts::new(
+            "aegis_federation_sync_total",
+            "Federation delta sync attempts",
+        ),
+        &["peer_id", "result"],
+    )
+    .expect("metric aegis_federation_sync_total");
+    let _ = prometheus::default_registry().register(Box::new(c.clone()));
+    c
+});
+
+static FEDERATION_SYNC_DURATION: LazyLock<HistogramVec> = LazyLock::new(|| {
+    let h = HistogramVec::new(
+        HistogramOpts::new(
+            "aegis_federation_sync_duration_seconds",
+            "Federation sync_with_peer duration",
+        )
+        .buckets(vec![0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 15.0, 60.0]),
+        &["peer_id"],
+    )
+    .expect("metric aegis_federation_sync_duration_seconds");
+    let _ = prometheus::default_registry().register(Box::new(h.clone()));
+    h
+});
+
+static FEDERATION_PEER_STATUS: LazyLock<GaugeVec> = LazyLock::new(|| {
+    let g = GaugeVec::new(
+        Opts::new(
+            "aegis_federation_peer_status",
+            "Peer status: 0=offline 1=degraded 2=online",
+        ),
+        &["peer_id"],
+    )
+    .expect("metric aegis_federation_peer_status");
+    let _ = prometheus::default_registry().register(Box::new(g.clone()));
+    g
+});
+
+static FEDERATION_PEER_LATENCY: LazyLock<GaugeVec> = LazyLock::new(|| {
+    let g = GaugeVec::new(
+        Opts::new(
+            "aegis_federation_peer_latency_ms",
+            "Last federation health probe latency (ms)",
+        ),
+        &["peer_id"],
+    )
+    .expect("metric aegis_federation_peer_latency_ms");
+    let _ = prometheus::default_registry().register(Box::new(g.clone()));
+    g
+});
+
+pub fn federation_peer_status(peer_id: &str, status: &str) {
+    let v = match status {
+        "online" => 2.0,
+        "degraded" => 1.0,
+        _ => 0.0,
+    };
+    FEDERATION_PEER_STATUS
+        .with_label_values(&[peer_id])
+        .set(v);
+}
+
+pub fn federation_peer_latency_ms(peer_id: &str, ms: u64) {
+    FEDERATION_PEER_LATENCY
+        .with_label_values(&[peer_id])
+        .set(ms as f64);
+}
+
+pub fn federation_mtls_inbound(result: &str) {
+    FEDERATION_MTLS_INBOUND
+        .with_label_values(&[result])
+        .inc();
+}
+
+pub fn federation_mtls_outbound(peer_id: &str, result: &str) {
+    FEDERATION_MTLS_OUTBOUND
+        .with_label_values(&[peer_id, result])
+        .inc();
+}
+
+pub fn federation_sync(peer_id: &str, success: bool, duration_ms: u64) {
+    let result = if success { "success" } else { "error" };
+    FEDERATION_SYNC
+        .with_label_values(&[peer_id, result])
+        .inc();
+    FEDERATION_SYNC_DURATION
+        .with_label_values(&[peer_id])
+        .observe(duration_ms as f64 / 1000.0);
+}
+
+pub fn federation_peer_status_label(
+    online: bool,
+    health_ok: bool,
+    federation_ready: bool,
+) -> &'static str {
+    if !online || !health_ok {
+        "offline"
+    } else if !federation_ready {
+        "degraded"
+    } else {
+        "online"
+    }
+}
+
+// --- Scout 2.0 multi-source intel ---
+static SCOUT_INTEL_SOURCE: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    let c = IntCounterVec::new(
+        Opts::new(
+            "aegis_scout_intel_source_total",
+            "Scout intel hub per-source outcomes",
+        ),
+        &["source", "status"],
+    )
+    .expect("metric aegis_scout_intel_source_total");
+    let _ = prometheus::default_registry().register(Box::new(c.clone()));
+    c
+});
+
+static SCOUT_PIPELINE_RUNS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    let c = IntCounterVec::new(
+        Opts::new(
+            "aegis_scout_pipeline_runs_total",
+            "Scout 2.0 full pipeline runs",
+        ),
+        &["result"],
+    )
+    .expect("metric aegis_scout_pipeline_runs_total");
+    let _ = prometheus::default_registry().register(Box::new(c.clone()));
+    c
+});
+
+static SCOUT_PIPELINE_DURATION: LazyLock<HistogramVec> = LazyLock::new(|| {
+    let h = HistogramVec::new(
+        HistogramOpts::new(
+            "aegis_scout_pipeline_duration_seconds",
+            "Wall time for synchronous Scout pipeline (excl. background heal)",
+        )
+        .buckets(vec![5.0, 15.0, 30.0, 60.0, 90.0, 120.0, 180.0, 240.0]),
+        &["result"],
+    )
+    .expect("metric aegis_scout_pipeline_duration_seconds");
+    let _ = prometheus::default_registry().register(Box::new(h.clone()));
+    h
+});
+
+static SCOUT_HEAL_QUEUED: LazyLock<IntCounter> = LazyLock::new(|| {
+    let c = IntCounter::with_opts(Opts::new(
+        "aegis_scout_heal_queued_total",
+        "Autonomous healing jobs queued after Scout",
+    ))
+    .expect("metric aegis_scout_heal_queued_total");
+    let _ = prometheus::default_registry().register(Box::new(c.clone()));
+    c
+});
+
+static SCOUT_FINDINGS_LAST: LazyLock<Gauge> = LazyLock::new(|| {
+    let g = Gauge::with_opts(Opts::new(
+        "aegis_scout_findings_last",
+        "Findings count from last successful Scout run",
+    ))
+    .expect("metric aegis_scout_findings_last");
+    let _ = prometheus::default_registry().register(Box::new(g.clone()));
+    g
+});
+
+/// Per-source collector outcome from scout_intel hub.
+pub fn record_scout_intel_source(source_id: &str, status: &str) {
+    SCOUT_INTEL_SOURCE
+        .with_label_values(&[source_id, status])
+        .inc();
+}
+
+/// Full `/api/scout` pipeline finished (success | error | timeout).
+pub fn record_scout_pipeline_run(
+    result: &str,
+    duration_secs: f64,
+    findings: usize,
+    heal_queued: usize,
+) {
+    SCOUT_PIPELINE_RUNS.with_label_values(&[result]).inc();
+    SCOUT_PIPELINE_DURATION
+        .with_label_values(&[result])
+        .observe(duration_secs);
+    if result == "success" {
+        SCOUT_FINDINGS_LAST.set(findings as f64);
+    }
+    if heal_queued > 0 {
+        SCOUT_HEAL_QUEUED.inc_by(heal_queued as u64);
+    }
 }

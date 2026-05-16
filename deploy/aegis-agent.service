@@ -1,0 +1,16 @@
+[Unit]
+Description=AEGIS agent-cli API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/aegis/backend
+EnvironmentFile=/etc/aegis/agent.env
+ExecStart=/opt/aegis/bin/agent-cli --config /opt/aegis/backend/config.yaml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

@@ -3,19 +3,31 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, Shield, Zap, Clock, Target } from 'lucide-react';
-import { ApiClient, getWsBaseUrl } from '../../../lib/api';
+import { ApiClient, type ContainResult, type FusedThreatRow } from '../../../lib/api';
+import { dispatchContainComplete, dispatchStatusRefresh } from '../../../lib/aegisEvents';
+import { useToast } from '../../../components/Toast';
+import { useAegisWebSocket } from '../../../lib/useAegisWebSocket';
 import ErrorBoundary from '../../../components/ErrorBoundary';
 import LoadingSpinner from '../../../components/LoadingSpinner';
 
-interface FusedThreat {
-  cluster_id: string;
-  severity: number;
-  confidence: number;
-  sources: string[];
-  iocs: string[];
-  summary: string;
-  first_seen: string;
-  last_seen: string;
+type IocField = string | { ioc_type?: string; value?: string; type?: string };
+
+type FusedThreat = FusedThreatRow & { iocs: IocField[] };
+
+function formatIoc(ioc: IocField): string {
+  if (typeof ioc === 'string') return ioc;
+  const t = ioc.ioc_type || ioc.type || 'ioc';
+  const v = ioc.value || '';
+  return v ? `${t}:${v}` : t;
+}
+
+function formatTs(ts: string | number): string {
+  if (typeof ts === 'number') {
+    const ms = ts > 1_000_000_000_000 ? ts : ts * 1000;
+    return new Date(ms).toLocaleString('ru-RU');
+  }
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? String(ts) : d.toLocaleString('ru-RU');
 }
 
 const api = new ApiClient();
@@ -38,7 +50,7 @@ function exportThreats(threats: FusedThreat[], format: 'json' | 'csv') {
       t.severity,
       t.confidence,
       t.sources.join('|'),
-      t.iocs.join('|'),
+      t.iocs.map(formatIoc).join('|'),
       `"${t.summary.replace(/"/g, '""')}"`,
       t.first_seen,
       t.last_seen,
@@ -55,11 +67,12 @@ function exportThreats(threats: FusedThreat[], format: 'json' | 'csv') {
 }
 
 export default function ThreatIntelligence() {
+  const { showToast } = useToast();
   const [threats, setThreats] = useState<FusedThreat[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
-  const [wsStatus, setWsStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [error, setError] = useState<string>('');
+  const [containingId, setContainingId] = useState<string | null>(null);
 
   // Fetch fused threats
   const fetchThreats = async () => {
@@ -76,43 +89,23 @@ export default function ThreatIntelligence() {
     }
   };
 
-  // WebSocket live updates
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-
-    const connectWS = () => {
-      try {
-        ws = new WebSocket(`${getWsBaseUrl()}/ws`);
-        
-        ws.onopen = () => setWsStatus('connected');
-        ws.onclose = () => {
-          setWsStatus('disconnected');
-          setTimeout(connectWS, 3000); // reconnect
-        };
-        ws.onerror = () => setWsStatus('disconnected');
-
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'alert' || msg.type === 'threat') {
-              fetchThreats(); // refresh on new threat
-            }
-          } catch (_) {}
-        };
-      } catch (_) {
-        setWsStatus('disconnected');
-      }
-    };
-
-    connectWS();
-    return () => ws?.close();
-  }, []);
+  const wsStatus = useAegisWebSocket((msg: any) => {
+    if (msg?.type === 'alert' || msg?.type === 'threat') {
+      fetchThreats();
+    }
+  });
 
   // Initial load + polling fallback
   useEffect(() => {
-    fetchThreats();
-    const interval = setInterval(fetchThreats, 15000); // fallback poll every 15s
-    return () => clearInterval(interval);
+    let mounted = true;
+    setTimeout(() => {
+      if (mounted) fetchThreats();
+    }, 0);
+    const interval = setInterval(() => { if (mounted) fetchThreats(); }, 15000); // fallback poll every 15s
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const getSeverityColor = (sev: number) => {
@@ -136,17 +129,17 @@ export default function ThreatIntelligence() {
             THREAT INTELLIGENCE ENGINE
             <div className={`w-1.5 h-1.5 rounded-full ${wsStatus === 'connected' ? 'bg-[#00F5A3]' : 'bg-[#ffb4ab] animate-pulse'}`} />
           </div>
-          <h1 className="text-6xl font-bold tracking-tighter">Threat Intelligence</h1>
+          <h1 className="text-4xl font-bold tracking-tight">Threat Intelligence</h1>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right font-mono text-xs text-white/40">
             LAST SYNC: {lastUpdate.toLocaleTimeString('ru-RU')}<br />
             <span className="text-[#ddb7ff]">{threats.length} FUSED CLUSTERS</span>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => exportThreats(threats, 'json')} className="px-4 py-2 text-xs border border-white/20 rounded-xl hover:bg-white/5 font-mono tracking-widest">JSON</button>
-            <button onClick={() => exportThreats(threats, 'csv')} className="px-4 py-2 text-xs border border-white/20 rounded-xl hover:bg-white/5 font-mono tracking-widest">CSV</button>
-          </div>
+        <div className="flex gap-2">
+          <button onClick={() => exportThreats(threats, 'json')} className="px-4 py-2 text-xs border border-white/20 rounded-xl hover:bg-white/5 font-mono tracking-widest transition-colors active:scale-[0.985]">JSON</button>
+          <button onClick={() => exportThreats(threats, 'csv')} className="px-4 py-2 text-xs border border-white/20 rounded-xl hover:bg-white/5 font-mono tracking-widest transition-colors active:scale-[0.985]">CSV</button>
+        </div>
         </div>
       </div>
 
@@ -222,7 +215,7 @@ export default function ThreatIntelligence() {
                         <div className="text-xs font-mono tracking-widest text-white/40 mb-2">INDICATORS OF COMPROMISE</div>
                         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm font-mono text-white/70">
                           {threat.iocs.slice(0, 6).map((ioc, i) => (
-                            <span key={i} className="hover:text-[#ddb7ff] cursor-pointer transition-colors">{ioc}</span>
+                            <span key={i} className="hover:text-[#ddb7ff] cursor-pointer transition-colors">{formatIoc(ioc)}</span>
                           ))}
                           {threat.iocs.length > 6 && <span className="text-white/30">+{threat.iocs.length - 6} more</span>}
                         </div>
@@ -232,20 +225,64 @@ export default function ThreatIntelligence() {
                     {/* Time */}
                     <div className="flex items-center gap-6 text-xs font-mono text-white/40">
                       <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5" /> FIRST SEEN: {new Date(threat.first_seen).toLocaleString('ru-RU')}
+                        <Clock className="w-3.5 h-3.5" /> FIRST SEEN: {formatTs(threat.first_seen)}
                       </div>
-                      <div>LAST SEEN: {new Date(threat.last_seen).toLocaleString('ru-RU')}</div>
+                      <div>LAST SEEN: {formatTs(threat.last_seen)}</div>
                     </div>
                   </div>
 
                   {/* Action */}
                   <div className="lg:pt-2">
-                    <button 
-                      onClick={() => alert(`Initiating containment for cluster ${threat.cluster_id}`)}
-                      className="px-8 py-3 bg-[#ddb7ff] text-black rounded-2xl text-xs font-bold tracking-[2px] hover:bg-white transition-all whitespace-nowrap"
-                    >
-                      CONTAIN CLUSTER
-                    </button>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        disabled={threat.contained || containingId === threat.cluster_id}
+                        onClick={async () => {
+                          setContainingId(threat.cluster_id);
+                          try {
+                            const res: ContainResult = await api.containCluster(threat.cluster_id);
+                            if (res.status === 'contained') {
+                              setThreats((prev) =>
+                                prev.map((t) =>
+                                  t.cluster_id === threat.cluster_id ? { ...t, contained: true } : t
+                                )
+                              );
+                              dispatchContainComplete({
+                                cluster_id: res.cluster_id,
+                                isolation_level: res.isolation_level,
+                                runtime: res.runtime,
+                                network: res.network,
+                                threats_blocked: res.threats_blocked,
+                              });
+                              dispatchStatusRefresh();
+                              showToast(
+                                `Contain ${res.enforcement_mode ?? 'policy'} · ${res.isolation_level}/${res.runtime} · blocked=${res.threats_blocked ?? '—'}`
+                              );
+                            } else {
+                              showToast(res.message || 'Contain failed');
+                            }
+                          } catch (e: unknown) {
+                            showToast((e as Error)?.message || 'Contain API error');
+                          } finally {
+                            setContainingId(null);
+                          }
+                        }}
+                        className="px-8 py-3 bg-[#ffb4ab] text-black rounded-2xl text-xs font-bold tracking-[2px] hover:bg-white transition-all active:scale-[0.985] whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {threat.contained
+                          ? 'CONTAINED'
+                          : containingId === threat.cluster_id
+                            ? 'ISOLATING…'
+                            : 'CONTAIN CLUSTER'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => exportThreats([threat], 'json')}
+                        className="px-8 py-2 border border-white/20 rounded-xl text-xs font-mono tracking-widest hover:bg-white/5"
+                      >
+                        EXPORT JSON
+                      </button>
+                    </div>
                   </div>
                 </div>
               </motion.div>

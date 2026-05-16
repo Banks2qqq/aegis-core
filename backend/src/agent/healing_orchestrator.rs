@@ -67,6 +67,9 @@ pub struct HealingResult {
     pub human_approved: bool,
     pub rollback_available: bool,
     pub audit_event: String,
+    /// `applied` | `dry_run` | `skipped`
+    pub apply_mode: String,
+    pub patch_path: Option<String>,
 }
 
 impl HealingResult {
@@ -262,6 +265,8 @@ impl HealingOrchestrator {
                 human_approved: false,
                 rollback_available: false,
                 audit_event: "verification_failed".to_string(),
+                apply_mode: "skipped".into(),
+                patch_path: None,
             });
         }
 
@@ -280,6 +285,8 @@ impl HealingOrchestrator {
                 human_approved: false,
                 rollback_available: true,
                 audit_event: "sandbox_failed".to_string(),
+                apply_mode: "skipped".into(),
+                patch_path: None,
             });
         }
 
@@ -297,6 +304,8 @@ impl HealingOrchestrator {
                 human_approved: false,
                 rollback_available: true,
                 audit_event: "hitl_denied".to_string(),
+                apply_mode: "skipped".into(),
+                patch_path: None,
             });
         }
 
@@ -313,6 +322,8 @@ impl HealingOrchestrator {
                     human_approved,
                     rollback_available: true,
                     audit_event: String::new(),
+                    apply_mode: "pending".into(),
+                    patch_path: None,
                 }).await;
 
                 match quorum_result {
@@ -336,6 +347,8 @@ impl HealingOrchestrator {
                             human_approved,
                             rollback_available: true,
                             audit_event: "raft_quorum_failed".to_string(),
+                            apply_mode: "skipped".into(),
+                            patch_path: None,
                         });
                     }
                     Err(e) => {
@@ -355,6 +368,8 @@ impl HealingOrchestrator {
                             human_approved,
                             rollback_available: true,
                             audit_event: "raft_quorum_error".to_string(),
+                            apply_mode: "skipped".into(),
+                            patch_path: None,
                         });
                     }
                 }
@@ -369,19 +384,34 @@ impl HealingOrchestrator {
             }
         }
 
-        // 7. Two-Phase Commit + Rollback Manager
-        let mut rollback_mgr = RollbackManager::new();
-        let _snapshot = rollback_mgr.prepare().await?;
+        // 7. Two-Phase Commit — disk snapshot + patch apply (PR4.1)
+        let applier = crate::patch_applier::PatchApplier::new(self.healing_data_root());
+        let snapshot_id = applier.prepare_snapshot().ok();
 
-        let applied = match self.apply_patch(&proposed_patch, &risk).await {
-            Ok(true) => true,
-            Ok(false) | Err(_) => {
-                // Failure — rollback
-                let _ = rollback_mgr.rollback().await;
-                let _ = self.audit.log_event("healing_orchestrator", &format!("patch_apply_failed_rollback id={}", patch_id), 0.7, false);
-                false
+        let (applied, apply_mode, patch_path) = match self
+            .apply_patch(&patch_id, &proposed_patch, &risk)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                if let Some(ref sid) = snapshot_id {
+                    let _ = applier.rollback(sid);
+                }
+                return Err(e);
             }
         };
+
+        if !applied {
+            if let Some(ref sid) = snapshot_id {
+                let _ = applier.rollback(sid);
+                let _ = self.audit.log_event(
+                    "healing_orchestrator",
+                    &format!("patch_apply_failed_rollback id={}", patch_id),
+                    0.7,
+                    false,
+                );
+            }
+        }
 
         let _ = self.audit.log_event(
             "healing_orchestrator",
@@ -407,10 +437,19 @@ impl HealingOrchestrator {
             human_approved,
             rollback_available: true,
             audit_event: "success".to_string(),
+            apply_mode,
+            patch_path,
         })
     }
 
-    // === Internal steps (MVP placeholders — to be implemented in next iterations) ===
+    fn healing_data_root(&self) -> std::path::PathBuf {
+        std::path::Path::new(&self.config.database.sqlite_path)
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("./data"))
+    }
+
+    // === Internal steps ===
 
     async fn generate_patch(&self, anomaly: &str, patch_type: &PatchType) -> Result<String, String> {
         // === Patch Generator v2: Inquisitor 2.0 + DNA Engine integration ===
@@ -607,7 +646,7 @@ impl HealingOrchestrator {
             config.runtime,
             config.memory_mb,
             config.cpu_cores,
-            &patch[..patch.len().min(120)]
+            &crate::utils::clip(patch, 120)
         );
 
         // В реальной реализации:
@@ -653,10 +692,32 @@ impl HealingOrchestrator {
         }
     }
 
-    async fn apply_patch(&self, patch: &str, risk: &PatchRisk) -> Result<bool, String> {
-        // Two-phase commit placeholder.
-        // Real: prepare (dry-run), verify again, then commit + update DNA/KB.
-        tracing::info!("Applying patch (risk={:?}): {}", risk, &patch[..80]);
-        Ok(true)
+    async fn apply_patch(
+        &self,
+        patch_id: &str,
+        patch: &str,
+        risk: &PatchRisk,
+    ) -> Result<(bool, String, Option<String>), String> {
+        if !matches!(risk, PatchRisk::Low | PatchRisk::Medium) {
+            return Ok((false, "skipped".into(), None));
+        }
+        if self.config.is_air_gapped() {
+            return Ok((false, "air_gapped".into(), None));
+        }
+
+        let enforce = crate::patch_applier::heal_apply_enforced();
+        let applier = crate::patch_applier::PatchApplier::new(self.healing_data_root());
+        let record = applier.apply_config_patch(patch_id, patch, enforce)?;
+        let applied = enforce && record.mode == "applied";
+
+        tracing::info!(
+            "Applying patch id={} mode={} risk={:?} path={}",
+            patch_id,
+            record.mode,
+            risk,
+            record.path
+        );
+
+        Ok((applied, record.mode, Some(record.path)))
     }
 }

@@ -1,3 +1,239 @@
+export type ScoutBduItem = {
+  id: string;
+  bdu_id: string;
+  title: string;
+  severity: string;
+  url: string;
+  published?: string;
+};
+
+export type ContainResult = {
+  status: string;
+  cluster_id: string;
+  severity?: number;
+  isolation_level?: string;
+  runtime?: string;
+  network?: string;
+  threats_blocked?: number;
+  fusion_marked?: boolean;
+  enforcement_mode?: string;
+  host_enforced?: boolean;
+  contain_record?: Record<string, unknown>;
+  message?: string;
+};
+
+export type FusedThreatRow = {
+  cluster_id: string;
+  severity: number;
+  confidence: number;
+  sources: string[];
+  iocs: Array<string | { ioc_type?: string; value?: string; type?: string }>;
+  summary: string;
+  first_seen: string | number;
+  last_seen: string | number;
+  contained?: boolean;
+};
+
+export type ScoutResult = {
+  status: string;
+  found: number;
+  ingested: number;
+  ingested_new?: number;
+  ingested_updated?: number;
+  source: string;
+  completed_at?: number;
+  items: ScoutBduItem[];
+  critic_verdict?: string;
+  critic_risk?: number;
+  inquisitor_blocks?: number;
+  inquisitor_escalates?: number;
+  fusion_updated?: number;
+  deception_deployed?: number;
+  healing_attempted?: number;
+  healing_applied?: number;
+  total_findings?: number;
+  sources_ok?: number;
+  sources_skipped?: number;
+  sources_failed?: number;
+  enrichment_merged?: number;
+  total_iocs?: number;
+  total_cves?: number;
+  pipeline?: string[];
+  error?: string;
+};
+
+export type BduRecentResponse = {
+  items: ScoutBduItem[];
+  last_scout?: {
+    completed_at: number;
+    found: number;
+    ingested: number;
+    ingested_new?: number;
+    ingested_updated?: number;
+    fusion_updated?: number;
+    deception_deployed?: number;
+    healing_attempted?: number;
+    healing_applied?: number;
+    total_findings?: number;
+    sources_ok?: number;
+    sources_skipped?: number;
+    sources_failed?: number;
+    critic_verdict?: string;
+    critic_risk?: number;
+    status: string;
+  } | null;
+};
+
+export type StatusResponse = {
+  oracle_alive?: boolean;
+  active_sentinels?: number;
+  threats_blocked?: number;
+  osint_documents?: number;
+  darknet_documents?: number;
+  black_kb_count?: number;
+  bdu_kb_count?: number;
+  fusion_clusters?: number;
+  shield_active?: boolean;
+  version?: string;
+  air_gapped?: boolean;
+  react_ready?: boolean;
+  llm_ready?: boolean;
+  llm_cloud_available?: boolean;
+  llm_local_available?: boolean;
+};
+
+export type ReactLlmStatus = {
+  react_ready: boolean;
+  air_gapped: boolean;
+  cloud_available: boolean;
+  local_available: boolean;
+  llm_ready: boolean;
+  cloud_provider?: string | null;
+  default_model?: string | null;
+};
+
+export type KnowledgeResponse = {
+  bdu: string[];
+  other_intel: string[];
+  black_kb_count?: number;
+  osint?: string[];
+  darknet?: string[];
+};
+
+export type FederationNode = {
+  id: string;
+  url: string;
+  federation_url?: string;
+  status?: 'online' | 'degraded' | 'offline' | string;
+  last_sync_duration_ms?: number;
+  online?: boolean;
+  health_ok?: boolean;
+  federation_ready?: boolean;
+  last_sync?: string;
+  last_sync_at?: number;
+  last_sync_count?: number;
+  latency_ms?: number;
+  remote_merkle?: string;
+  merkle_root?: string;
+  merkle_match?: boolean;
+  version?: string;
+  error?: string;
+  role?: string;
+};
+
+export type FederationOpsMetrics = {
+  checked_at: number;
+  local_node_id: string;
+  peers: Array<{
+    id: string;
+    status: string;
+    url: string;
+    federation_url: string;
+    federation_ready: boolean;
+    latency_ms?: number;
+    last_sync_at?: number;
+    last_sync_duration_ms?: number;
+    last_error?: string;
+  }>;
+};
+
+export type FederationHealthReport = {
+  local_node_id: string;
+  local_public_url?: string;
+  local_federation_url?: string;
+  local_online: boolean;
+  local_merkle: string;
+  peer_count: number;
+  peers_online: number;
+  peers: FederationNode[];
+  checked_at: number;
+  auth_enabled?: boolean;
+  mtls_enabled?: boolean;
+};
+
+export type RaftNodeSnapshot = {
+  id: string;
+  role: string;
+  status: 'live' | 'stale' | 'candidate' | string;
+  term?: number;
+  last_heartbeat_age_secs?: number;
+  leader_id?: string | null;
+  voted_for?: string | null;
+  is_leader?: boolean;
+};
+
+export type RaftStatus = {
+  leader_id?: string | null;
+  leader?: string | null;
+  term?: number;
+  commit_index?: number;
+  last_applied?: number;
+  log_size?: number;
+  last_log_index?: number;
+  active_nodes?: number;
+  total_nodes?: number;
+  nodes?: RaftNodeSnapshot[];
+  checked_at?: number;
+  error?: string;
+};
+
+export type RaftMetrics = {
+  replication_count: number;
+  commit_count: number;
+  avg_commit_time_ms: number;
+  election_count: number;
+  last_commit_time_ms?: number | null;
+};
+
+export type FederationHealthResponse = {
+  report: FederationHealthReport;
+  raft?: RaftStatus;
+};
+
+export type FederationSyncResult = {
+  peer_id: string;
+  peer_url: string;
+  synced: number;
+  success: boolean;
+  error?: string | null;
+  raft_index?: number | null;
+  local_merkle_before?: string;
+  local_merkle_after?: string;
+  remote_merkle_before?: string | null;
+  remote_merkle_after?: string | null;
+  merkle_match?: boolean;
+  auth_used?: boolean;
+  merkle_repaired?: number;
+};
+
+export type FederationSyncResponse = {
+  success: boolean;
+  sync_all?: boolean;
+  result?: FederationSyncResult;
+  results?: FederationSyncResult[];
+  error?: string;
+};
+
 export type JwtClaims = {
   sub?: string;
   exp?: number;
@@ -63,41 +299,92 @@ export function getWsBaseUrl(): string {
   return api.toString().replace(/\/$/, '');
 }
 
-// ==================== Zero-Trust storage ====================
-// P0 demo-ready: keep tokens in-memory (minimize persistence surface).
-// Note: page reload clears tokens → user re-authenticates (acceptable for demos).
+// ==================== Auth storage ====================
+const LS_ACCESS = 'aegis_access_token';
+const LS_REFRESH = 'aegis_refresh_token';
+
 const tokenStore: { accessToken: string | null; refreshToken: string | null } = {
   accessToken: null,
   refreshToken: null,
 };
 
+function hydrateTokenFromStorage() {
+  if (tokenStore.accessToken) return;
+  try {
+    const access =
+      localStorage.getItem(LS_ACCESS) || localStorage.getItem('aegis_token');
+    const refresh =
+      localStorage.getItem(LS_REFRESH) || localStorage.getItem('aegis_refresh_token');
+    if (access) tokenStore.accessToken = access;
+    if (refresh) tokenStore.refreshToken = refresh;
+  } catch {
+    /* ignore */
+  }
+}
+
 export function setTokens(accessToken: string, refreshToken?: string) {
   tokenStore.accessToken = accessToken || null;
   if (refreshToken !== undefined) tokenStore.refreshToken = refreshToken || null;
+  try {
+    if (accessToken) {
+      localStorage.setItem(LS_ACCESS, accessToken);
+      localStorage.setItem('aegis_token', accessToken);
+    } else {
+      localStorage.removeItem(LS_ACCESS);
+      localStorage.removeItem('aegis_token');
+    }
+    if (refreshToken !== undefined) {
+      if (refreshToken) {
+        localStorage.setItem(LS_REFRESH, refreshToken);
+        localStorage.setItem('aegis_refresh_token', refreshToken);
+      } else {
+        localStorage.removeItem(LS_REFRESH);
+        localStorage.removeItem('aegis_refresh_token');
+      }
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 export function getAccessToken(): string | null {
+  hydrateTokenFromStorage();
   return tokenStore.accessToken;
 }
 
 export function getRefreshToken(): string | null {
+  hydrateTokenFromStorage();
   return tokenStore.refreshToken;
 }
 
 export function clearAuthStorage() {
   tokenStore.accessToken = null;
   tokenStore.refreshToken = null;
-  // keep best-effort cleanup for legacy sessions
   try {
+    localStorage.removeItem(LS_ACCESS);
+    localStorage.removeItem(LS_REFRESH);
     localStorage.removeItem('aegis_token');
     localStorage.removeItem('aegis_refresh_token');
     localStorage.removeItem('aegis_role');
-  } catch {}
+  } catch {
+    /* ignore */
+  }
 }
 
+/** Открыть кабинет (логин — overlay на /dashboard/overview, не отдельная страница). */
 export function redirectToLogin() {
   if (typeof window === 'undefined') return;
-  window.location.href = '/dashboard/login';
+  const onDashboard = window.location.pathname.startsWith('/dashboard');
+  if (onDashboard) {
+    window.dispatchEvent(new CustomEvent('aegis_unauthorized'));
+    return;
+  }
+  window.location.href = '/dashboard/overview';
+}
+
+export function handleSessionExpired() {
+  clearAuthStorage();
+  redirectToLogin();
 }
 
 export function logout() {
@@ -123,7 +410,7 @@ export class ApiClient {
 
   constructor(opts: ApiOptions = {}) {
     this.baseUrl = (opts.baseUrl || getApiBaseUrl()).replace(/\/$/, '');
-    this.onUnauthorized = opts.onUnauthorized || logout;
+    this.onUnauthorized = opts.onUnauthorized || handleSessionExpired;
     this.useCookies =
       opts.useCookies ?? (process.env.NEXT_PUBLIC_AUTH_MODE === 'cookie');
     this.timeoutMs = Number.isFinite(opts.timeoutMs) ? (opts.timeoutMs as number) : 8000;
@@ -220,14 +507,19 @@ export class ApiClient {
     const data = safeJsonParse(text);
 
     if (!res.ok) {
-      const msg =
-        (data && typeof data === 'object' && (data as any).message && String((data as any).message)) ||
-        `HTTP ${res.status}`;
+      const errBody =
+        data && typeof data === 'object'
+          ? (data as { error?: string; message?: string }).error ||
+            (data as { message?: string }).message
+          : undefined;
+      const msg = errBody ? String(errBody) : `HTTP ${res.status}`;
+      const err = new Error(msg) as Error & { httpStatus?: number };
+      err.httpStatus = res.status;
 
       if (res.status === 403 || res.status >= 500) {
         emitApiOverlay(res.status, msg);
       }
-      throw new Error(msg);
+      throw err;
     }
 
     return data as T;
@@ -235,15 +527,82 @@ export class ApiClient {
 
   // Convenience endpoints
   getStatus() {
-    return this.request('/api/status', { method: 'GET' });
+    return this.request<StatusResponse>('/api/status', { method: 'GET' });
+  }
+
+  getKnowledge() {
+    return this.request<KnowledgeResponse>('/api/knowledge', { method: 'GET' });
   }
 
   getFusedThreats() {
-    return this.request('/api/fused-threats', { method: 'GET' });
+    return this.request<FusedThreatRow[]>('/api/fused-threats', { method: 'GET' });
+  }
+
+  getReactStatus() {
+    return this.request<ReactLlmStatus>('/api/react/status', { method: 'GET' });
   }
 
   launchReactMission(mission: string) {
     return this.request('/api/react', { method: 'POST', json: { mission } });
+  }
+
+  runScout() {
+    return this.request<ScoutResult>('/api/scout', { method: 'POST', json: {} });
+  }
+
+  getBduRecent() {
+    return this.request<BduRecentResponse>('/api/bdu/recent', { method: 'GET' });
+  }
+
+  getAgents() {
+    return this.request('/api/agents', { method: 'GET' });
+  }
+
+  toggleAgent(id: string, action: 'start' | 'stop') {
+    return this.request(`/api/agents/${id}/${action}`, { method: 'POST', json: {} });
+  }
+
+  getAuditReport() {
+    return this.request('/api/audit-tail', { method: 'GET' });
+  }
+
+  getFederationNodes() {
+    return this.request<FederationNode[]>('/api/federation/nodes', { method: 'GET' });
+  }
+
+  getFederationHealth() {
+    return this.request<FederationHealthResponse>('/api/federation/health', { method: 'GET' });
+  }
+
+  getFederationMetrics() {
+    return this.request<FederationOpsMetrics>('/api/federation/metrics', { method: 'GET' });
+  }
+
+  getRaftStatus() {
+    return this.request<RaftStatus>('/api/raft/status', { method: 'GET' });
+  }
+
+  getRaftMetrics() {
+    return this.request<RaftMetrics>('/api/raft/metrics', { method: 'GET' });
+  }
+
+  toggleAirGap(enabled: boolean) {
+    return this.request('/api/air-gap', { method: 'POST', json: { enabled } });
+  }
+
+  syncFederationNode(opts: { peerUrl?: string; peerId?: string; syncAll?: boolean }) {
+    return this.request<FederationSyncResponse>('/api/federation/sync', {
+      method: 'POST',
+      json: {
+        peer_url: opts.peerUrl,
+        peer_id: opts.peerId,
+        sync_all: opts.syncAll ?? false,
+      },
+    });
+  }
+
+  containCluster(clusterId: string) {
+    return this.request<ContainResult>('/api/contain', { method: 'POST', json: { cluster_id: clusterId } });
   }
 }
 

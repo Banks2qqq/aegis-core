@@ -7,6 +7,7 @@
 //! - Distributed Oracle 2.0: log replication + state machine apply после commit
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +45,54 @@ pub struct OracleNode {
     pub leader_id: Option<String>,
 }
 
+/// Ops metrics for `/api/raft/metrics` (PR3.3).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RaftRuntimeMetrics {
+    pub replication_count: u64,
+    pub commit_count: u64,
+    pub total_commit_time_ms: u64,
+    pub election_count: u64,
+    pub last_commit_time_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RaftMetricsSnapshot {
+    pub replication_count: u64,
+    pub commit_count: u64,
+    pub avg_commit_time_ms: f64,
+    pub election_count: u64,
+    pub last_commit_time_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RaftNodeSnapshot {
+    pub id: String,
+    pub role: String,
+    /// `live` | `stale` | `candidate`
+    pub status: String,
+    pub term: u64,
+    pub last_heartbeat_age_secs: i64,
+    pub leader_id: Option<String>,
+    pub voted_for: Option<String>,
+    pub is_leader: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RaftStatusSnapshot {
+    pub leader_id: Option<String>,
+    /// Alias for dashboard compatibility.
+    pub leader: Option<String>,
+    pub term: u64,
+    pub commit_index: u64,
+    pub last_applied: u64,
+    pub log_size: usize,
+    pub last_log_index: u64,
+    pub active_nodes: usize,
+    pub total_nodes: usize,
+    pub nodes: Vec<RaftNodeSnapshot>,
+    pub checked_at: i64,
+}
+
 /// Лёгкий Raft Consensus Layer.
 #[derive(Clone)]
 pub struct ConsensusLayer {
@@ -51,9 +100,10 @@ pub struct ConsensusLayer {
     audit: Arc<AuditTrail>,
     current_term: u64,
     current_leader: Option<String>,
-    last_applied: u64,       // последний применённый индекс
-    commit_index: u64,       // индекс, до которого команды подтверждены кворумом
-    log: Vec<LogEntry>,      // Raft log (1-based index в записи)
+    last_applied: u64,
+    commit_index: u64,
+    log: Vec<LogEntry>,
+    metrics: RaftRuntimeMetrics,
 }
 
 impl ConsensusLayer {
@@ -66,6 +116,19 @@ impl ConsensusLayer {
             last_applied: 0,
             commit_index: 0,
             log: vec![],
+            metrics: RaftRuntimeMetrics::default(),
+        }
+    }
+
+    fn node_liveness_status(&self, node: &OracleNode, now: i64) -> &'static str {
+        if node.role == NodeRole::Candidate {
+            return "candidate";
+        }
+        let age = now.saturating_sub(node.last_heartbeat);
+        if age <= ELECTION_MAX_STALE_SECS {
+            "live"
+        } else {
+            "stale"
         }
     }
 
@@ -83,15 +146,20 @@ impl ConsensusLayer {
         }
     }
 
-    /// Heartbeat от лидера (обновляет состояние follower'ов).
+    /// Heartbeat от лидера (обновляет все ноды, включая лидера).
     pub fn heartbeat(&mut self, leader_id: &str, term: u64) {
         self.current_term = term;
         self.current_leader = Some(leader_id.to_string());
+        let now = chrono::Utc::now().timestamp();
 
         for node in &mut self.nodes {
-            if node.id != leader_id {
-                node.last_heartbeat = chrono::Utc::now().timestamp();
-                node.leader_id = Some(leader_id.to_string());
+            node.last_heartbeat = now;
+            node.leader_id = Some(leader_id.to_string());
+            if node.id == leader_id {
+                node.role = NodeRole::Leader;
+                node.term = term;
+            } else {
+                node.role = NodeRole::Follower;
             }
         }
     }
@@ -238,6 +306,9 @@ impl ConsensusLayer {
 
     /// Добавляет команду в лог и «реплицирует» на follower'ы (заглушка сети; в проде — gRPC/HTTP AppendEntries).
     pub async fn append_and_replicate(&mut self, command: &str) -> Result<u64, String> {
+        let started = Instant::now();
+        self.metrics.replication_count = self.metrics.replication_count.saturating_add(1);
+
         let index = self.append_new_entry(command);
         crate::metrics::raft_phase("append");
         tracing::info!(
@@ -250,6 +321,11 @@ impl ConsensusLayer {
 
         if self.try_commit(index) {
             self.apply_committed_inner()?;
+            let ms = started.elapsed().as_millis() as u64;
+            self.metrics.commit_count = self.metrics.commit_count.saturating_add(1);
+            self.metrics.total_commit_time_ms =
+                self.metrics.total_commit_time_ms.saturating_add(ms);
+            self.metrics.last_commit_time_ms = Some(ms);
         }
 
         Ok(index)
@@ -351,7 +427,12 @@ impl ConsensusLayer {
         }
 
         let cluster_size = self.nodes.len();
-        let majority = cluster_size / 2 + 1;
+        // Two-node federation pilot: one live node may assume leadership after partition.
+        let majority = if cluster_size <= 2 {
+            1
+        } else {
+            cluster_size / 2 + 1
+        };
         let votes = live_ids.len();
 
         if votes < majority {
@@ -385,6 +466,7 @@ impl ConsensusLayer {
         }
 
         self.current_leader = Some(candidate.clone());
+        self.metrics.election_count = self.metrics.election_count.saturating_add(1);
 
         let _ = self.audit.log_event(
             "raft",
@@ -397,6 +479,110 @@ impl ConsensusLayer {
         );
 
         Some(candidate)
+    }
+
+    pub fn last_log_index(&self) -> u64 {
+        self.log.last().map(|e| e.index).unwrap_or(0)
+    }
+
+    /// Snapshot for dashboard `/api/raft/status` (live cluster state).
+    pub fn status_snapshot(&self) -> RaftStatusSnapshot {
+        let now = chrono::Utc::now().timestamp();
+        let leader_id = self.current_leader.clone();
+        let nodes: Vec<RaftNodeSnapshot> = self
+            .nodes
+            .iter()
+            .map(|n| {
+                let is_leader = leader_id.as_deref() == Some(n.id.as_str());
+                RaftNodeSnapshot {
+                    id: n.id.clone(),
+                    role: format!("{:?}", n.role),
+                    status: self.node_liveness_status(n, now).to_string(),
+                    term: n.term,
+                    last_heartbeat_age_secs: now.saturating_sub(n.last_heartbeat),
+                    leader_id: n.leader_id.clone(),
+                    voted_for: n.voted_for.clone(),
+                    is_leader,
+                }
+            })
+            .collect();
+        let active = nodes.iter().filter(|n| n.status == "live").count();
+        let last_log_index = self.last_log_index();
+        RaftStatusSnapshot {
+            leader: leader_id.clone(),
+            leader_id,
+            term: self.current_term,
+            commit_index: self.commit_index,
+            last_applied: self.last_applied,
+            log_size: self.log.len(),
+            last_log_index,
+            active_nodes: active,
+            total_nodes: self.nodes.len(),
+            nodes,
+            checked_at: now,
+        }
+    }
+
+    /// Metrics for `/api/raft/metrics`.
+    pub fn metrics_snapshot(&self) -> RaftMetricsSnapshot {
+        let avg_commit_time_ms = if self.metrics.commit_count > 0 {
+            self.metrics.total_commit_time_ms as f64 / self.metrics.commit_count as f64
+        } else {
+            0.0
+        };
+        RaftMetricsSnapshot {
+            replication_count: self.metrics.replication_count,
+            commit_count: self.metrics.commit_count,
+            avg_commit_time_ms,
+            election_count: self.metrics.election_count,
+            last_commit_time_ms: self.metrics.last_commit_time_ms,
+        }
+    }
+
+    /// After long downtime (chaos, agent stop) all heartbeats may expire — reset and re-elect.
+    fn recover_all_stale_cluster(&mut self) {
+        let now = chrono::Utc::now().timestamp();
+        if self.nodes.is_empty() {
+            return;
+        }
+        let all_stale = self
+            .nodes
+            .iter()
+            .all(|n| now.saturating_sub(n.last_heartbeat) > ELECTION_MAX_STALE_SECS);
+        if !all_stale {
+            return;
+        }
+        for node in &mut self.nodes {
+            node.last_heartbeat = now;
+            node.leader_id = None;
+            node.voted_for = None;
+        }
+        self.current_leader = None;
+        tracing::warn!("Raft: all nodes stale — heartbeat recovery, scheduling election");
+        let _ = self.audit.log_event(
+            "raft",
+            "cluster_recovery_all_stale",
+            0.25,
+            false,
+        );
+    }
+
+    /// Background maintenance: stale detection + leader election when needed.
+    pub async fn maintain_cluster(&mut self) {
+        self.recover_all_stale_cluster();
+
+        if let Some(leader_id) = self.current_leader.clone() {
+            let term = self.current_term;
+            self.heartbeat(&leader_id, term);
+        }
+
+        let needs_election = self.check_heartbeats(ELECTION_MAX_STALE_SECS);
+        if needs_election || self.current_leader.is_none() {
+            let _ = self.elect_leader().await;
+            if let Some(leader_id) = self.current_leader.clone() {
+                self.heartbeat(&leader_id, self.current_term);
+            }
+        }
     }
 }
 

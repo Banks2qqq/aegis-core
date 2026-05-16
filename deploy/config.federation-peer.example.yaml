@@ -1,0 +1,12 @@
+# Example secondary node — copy to config.yaml on a second VPS and align secrets with primary.
+mode: production
+node_id: "aegis-prod-secondary"
+
+federation:
+  public_url: "https://secondary.example.com"
+  shared_secret: ""  # same as FEDERATION_SHARED_SECRET on primary
+  sync_interval_secs: 300
+  peers:
+    - id: "aegis-prod-primary"
+      url: "https://aegis-security.ru"
+      # auth_token: "optional-per-peer-override"

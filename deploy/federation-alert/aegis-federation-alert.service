@@ -1,0 +1,9 @@
+[Unit]
+Description=AEGIS federation health alert check
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/aegis/federation-alert.env
+Environment=AEGIS_ROOT=/opt/aegis
+ExecStart=/opt/aegis/deploy/federation-alert/check-federation-alert.sh

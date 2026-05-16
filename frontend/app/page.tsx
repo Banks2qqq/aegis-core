@@ -81,7 +81,7 @@ const Terminal = () => {
         <div className="lg:col-span-8 p-8 font-mono text-[13px] text-primary-soft/80 bg-black/40 min-h-[400px]">
           <div className="mb-6 flex items-center justify-between border-b border-white/5 pb-4">
             <div className="text-outline/50 uppercase tracking-widest text-[9px] font-bold">
-              // NOIR_CORE_V4.2.0_INIT
+              {/* NOIR_CORE_V4.2.0_INIT */}
             </div>
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-primary-neon animate-ping" />
@@ -93,12 +93,12 @@ const Terminal = () => {
             <p>
               <span className="text-secondary-neon">import</span> {'{ ImmunityCore }'}{' '}
               <span className="text-secondary-neon">from</span>{' '}
-              <span className="text-primary-soft">'@aegis/core'</span>;
+              <span className="text-primary-soft">&apos;@aegis/core&apos;</span>;
             </p>
             <p>
               <span className="text-secondary-neon">import</span> {'{ NeuralAdapt }'}{' '}
               <span className="text-secondary-neon">from</span>{' '}
-              <span className="text-primary-soft">'@aegis/ai'</span>;
+              <span className="text-primary-soft">&apos;@aegis/ai&apos;</span>;
             </p>
             <div className="h-4" />
             <p>
@@ -106,7 +106,7 @@ const Terminal = () => {
               <span className="text-secondary-neon">new</span> ImmunityCore({'{'}
             </p>
             <p className="ml-6">
-              mode: <span className="text-primary-soft">'autonomous'</span>,
+              mode: <span className="text-primary-soft">&apos;autonomous&apos;</span>,
             </p>
             <p className="ml-6">
               sensitivity: <span className="text-primary-soft">0.9997</span>,
@@ -115,7 +115,7 @@ const Terminal = () => {
               autoHeal: <span className="text-secondary-neon">true</span>,
             </p>
             <p className="ml-6">
-              latency_threshold: <span className="text-primary-soft">'5ms'</span>
+              latency_threshold: <span className="text-primary-soft">&apos;5ms&apos;</span>
             </p>
             <p>{'})'};</p>
             <div className="h-4" />
@@ -979,7 +979,7 @@ const DefenseTiers = () => {
             </div>
             {tier.intent === 'free' ? (
               <Link
-                href="/dashboard/login"
+                href="/dashboard/overview"
                 className={`w-full py-4 rounded-2xl font-display text-[10px] font-bold uppercase tracking-widest transition-all text-center ${
                   tier.popular ? 'bg-primary-neon text-white' : 'bg-white/5 border border-white/10 text-white hover:bg-white/10'
                 }`}
@@ -1442,7 +1442,25 @@ const ContactSection = () => {
   );
 };
 
+import { useRouter } from 'next/navigation';
+
 export default function Page() {
+  const router = useRouter();
+  const isTauri = process.env.NEXT_PUBLIC_IS_TAURI === 'true';
+
+  useEffect(() => {
+    if (isTauri) {
+      router.replace('/dashboard/overview');
+    }
+  }, [isTauri, router]);
+
+  if (isTauri) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#030014]">
+        <div className="w-8 h-8 border-2 border-[#00F5A3] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
   const containerRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -1566,7 +1584,7 @@ export default function Page() {
               href="/dashboard/overview"
               className="bg-white text-black px-8 py-2.5 rounded-full font-display text-[10px] tracking-widest font-bold uppercase transition-all hover:shadow-[0_0_30px_rgba(168,85,247,0.25)] noir-shimmer"
             >
-              Запустить пилот
+              Войти в личный кабинет
             </Link>
           </div>
         </div>

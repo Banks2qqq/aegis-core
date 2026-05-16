@@ -10,6 +10,8 @@
 # Effective run mode for current loader (development | pilot | production)
 mode: development
 
+node_id: "aegis-dev-local"
+
 llm:
   mode: cloud          # cloud | local | hybrid | airgapped
   cloud_provider: grok  # current loader uses `cloud_provider` (not `primary_provider`)
@@ -36,3 +38,7 @@ vault:
   enabled: false
   address: "http://127.0.0.1:8200"
   token: ""
+
+# Remote federation peers only (local node appears in /api/federation/nodes automatically).
+federation:
+  peers: []

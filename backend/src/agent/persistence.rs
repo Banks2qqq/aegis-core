@@ -43,7 +43,13 @@ impl PersistentStore {
             [name],
         )
         .ok();
-        self.get(name).await
+        conn.query_row(
+            "SELECT value FROM counters WHERE name = ?1",
+            [name],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|v| v as u64)
+        .unwrap_or(0)
     }
 
     pub async fn set(&self, name: &str, value: u64) {

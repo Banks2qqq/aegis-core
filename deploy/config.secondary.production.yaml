@@ -1,0 +1,44 @@
+# Secondary node — /opt/aegis/backend/config.yaml
+mode: production
+
+node_id: "aegis-prod-secondary"
+
+llm:
+  mode: cloud
+  cloud_provider: grok
+  local_base_url: "http://127.0.0.1:11434/v1"
+  fallback_enabled: true
+  default_model: "grok-3"
+
+security:
+  air_gapped: false
+  god_mode_safety_level: strict
+  human_in_the_loop: true
+
+audit:
+  enabled: true
+  immutable: true
+  log_path: "/opt/aegis/backend/data/audit.log"
+
+database:
+  sqlite_path: "/opt/aegis/backend/data/aegis.db"
+  qdrant_url: "http://127.0.0.1:6333"
+  dna_path: "/opt/aegis/backend/data/aegis_dna.json"
+
+vault:
+  enabled: false
+  address: "http://127.0.0.1:8200"
+  token: ""
+
+federation:
+  public_url: "https://node2.aegis-security.ru"
+  shared_secret: ""
+  sync_interval_secs: 300
+  mtls_client_cert: "/etc/aegis/federation/secondary.client.pem"
+  mtls_client_key: "/etc/aegis/federation/secondary.client.key"
+  mtls_ca_cert: "/etc/aegis/federation/ca.pem"
+  peers:
+    - id: "aegis-prod-primary"
+      url: "https://aegis-security.ru"
+      federation_url: "https://aegis-security.ru:8443"
+      mtls: true

@@ -34,6 +34,8 @@ pub struct CycleResult {
     pub inquisitor_blocks: usize,
     pub inquisitor_escalates: usize,
     pub ingested_ok: usize,
+    pub ingested_new: usize,
+    pub ingested_updated: usize,
     pub ingested_white: usize,
     pub ingested_black: usize,
     pub ingested_err: usize,
@@ -102,6 +104,27 @@ impl LearningOrchestrator {
 
         // 1. Scout
         let items = self.scout.run_advanced(topic).await.map_err(|e| e.to_string())?;
+        self.run_cycle_from_items(topic, items, None).await
+    }
+
+    /// Critic → Inquisitor → Ingest → DNA для уже собранных items (API / ФСТЭК БДУ).
+    pub async fn run_cycle_from_items(
+        &self,
+        topic: &str,
+        items: Vec<KnowledgeItem>,
+        progress: Option<&tokio::sync::broadcast::Sender<String>>,
+    ) -> Result<CycleResult, String> {
+        let topic = topic.trim();
+        if items.is_empty() {
+            return Err("no knowledge items to process".into());
+        }
+
+        let trusted_fstec = items.iter().all(|i| i.source == "fstec_bdu");
+
+        pipeline_msg(
+            progress,
+            format!("[CRITIC] ▶ Оценка риска для {} записей (0–1)", items.len()),
+        );
 
         // 2. Critic 2.0 per-item (FuturesUnordered)
         let k_ctx = crate::critic_agent::format_scout_context_for_critic(topic, &items);
@@ -165,7 +188,20 @@ impl LearningOrchestrator {
         let synthesis = format!(
             "SCOUT ITEMS TOPIC: {}\nITEMS:\n{}",
             topic,
-            items.iter().take(25).map(|it| format!("- {:?} | {} | {:.2}\n{}", it.item_type, it.source, it.confidence, &it.content[..300.min(it.content.len())])).collect::<Vec<_>>().join("\n")
+            items
+                .iter()
+                .take(25)
+                .map(|it| {
+                    format!(
+                        "- {:?} | {} | {:.2}\n{}",
+                        it.item_type,
+                        it.source,
+                        it.confidence,
+                        crate::utils::clip(&it.content, 300)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
         );
         let critic_score = self.critic.evaluate("ingest_knowledge_base()", topic, &synthesis).await;
         let merged_risk = critic_score.security_risk.max(max_knowledge_risk);
@@ -179,7 +215,18 @@ impl LearningOrchestrator {
 
         metrics::critic_bulk_verdict(&merged_verdict);
 
-        if merged_verdict == "BLOCK" || merged_risk >= 0.95 {
+        pipeline_msg(
+            progress,
+            format!(
+                "[CRITIC] risk={:.2} utility={:.2} → VERDICT: {}",
+                merged_risk,
+                critic_score.utility,
+                merged_verdict
+            ),
+        );
+
+        if merged_verdict == "BLOCK" || (!trusted_fstec && merged_risk >= 0.95) {
+            pipeline_msg(progress, "[CRITIC] ✗ Ingest заблокирован (BLOCK)");
             let _ = self.audit.log_event("agent-cli", "scout_blocked_by_critic", merged_risk, false);
             metrics::learning_gate_finish("critic", false);
             return Ok(CycleResult {
@@ -190,6 +237,8 @@ impl LearningOrchestrator {
                 inquisitor_blocks: 0,
                 inquisitor_escalates: 0,
                 ingested_ok: 0,
+                ingested_new: 0,
+                ingested_updated: 0,
                 ingested_white: 0,
                 ingested_black: 0,
                 ingested_err: 0,
@@ -197,6 +246,14 @@ impl LearningOrchestrator {
                 dna_snapshot: None,
             });
         }
+
+        pipeline_msg(
+            progress,
+            format!(
+                "[INQUISITOR] ▶ Глубокий анализ {} целей (exploit / in-the-wild)",
+                eval_targets.len()
+            ),
+        );
 
         // 3. Inquisitor 2.0 (parallel)
         let mut inq_futures = FuturesUnordered::new();
@@ -267,7 +324,25 @@ impl LearningOrchestrator {
             "ALLOW"
         };
 
-        if merged_inq == "BLOCK" {
+        pipeline_msg(
+            progress,
+            format!(
+                "[INQUISITOR] verdict={} | blocks={} escalates={}",
+                merged_inq,
+                inq_block_details.len(),
+                inq_escalate_details.len()
+            ),
+        );
+
+        if trusted_fstec && merged_inq == "BLOCK" {
+            pipeline_msg(
+                progress,
+                "[INQUISITOR] ESCALATE для ФСТЭК БДУ — ingest разрешён (официальный источник)",
+            );
+        }
+
+        if merged_inq == "BLOCK" && !trusted_fstec {
+            pipeline_msg(progress, "[INQUISITOR] ✗ Ingest заблокирован");
             metrics::learning_gate_finish("inquisitor", false);
             return Ok(CycleResult {
                 topic: topic.to_string(),
@@ -277,6 +352,8 @@ impl LearningOrchestrator {
                 inquisitor_blocks: inq_block_details.len(),
                 inquisitor_escalates: inq_escalate_details.len(),
                 ingested_ok: 0,
+                ingested_new: 0,
+                ingested_updated: 0,
                 ingested_white: 0,
                 ingested_black: 0,
                 ingested_err: 0,
@@ -293,8 +370,12 @@ impl LearningOrchestrator {
             let _ = self.audit.log_event("agent-cli", "scout_escalate_auto_approved_scheduled", merged_risk, true);
         }
 
+        pipeline_msg(progress, "[INGEST] ▶ Запись в Black Knowledge + метрики");
+
         // 4. Ingest (White/Black only)
         let mut ingested_ok = 0usize;
+        let mut ingested_new = 0usize;
+        let mut ingested_updated = 0usize;
         let mut ok_white = 0usize;
         let mut ok_black = 0usize;
         let mut ingested_err = 0usize;
@@ -307,8 +388,10 @@ impl LearningOrchestrator {
                             ingested_ok += 1;
                             ok_white += 1;
                             if deduped {
+                                ingested_updated += 1;
                                 metrics::knowledge_deduped(1);
                             } else {
+                                ingested_new += 1;
                                 metrics::knowledge_ingested(&KnowledgeType::White, 1);
                             }
                         }
@@ -321,8 +404,10 @@ impl LearningOrchestrator {
                             ingested_ok += 1;
                             ok_black += 1;
                             if deduped {
+                                ingested_updated += 1;
                                 metrics::knowledge_deduped(1);
                             } else {
+                                ingested_new += 1;
                                 metrics::knowledge_ingested(&KnowledgeType::Black, 1);
                             }
                         }
@@ -335,11 +420,22 @@ impl LearningOrchestrator {
 
         let _ = self.audit.log_event(
             "agent-cli",
-            &format!("scout_ingested ok={} white={} black={} err={}", ingested_ok, ok_white, ok_black, ingested_err),
+            &format!(
+                "scout_ingested ok={} new={} updated={} white={} black={} err={}",
+                ingested_ok, ingested_new, ingested_updated, ok_white, ok_black, ingested_err
+            ),
             0.25,
             true,
         );
         metrics::learning_gate_finish("ingest", ingested_err == 0);
+
+        pipeline_msg(
+            progress,
+            format!(
+                "[INGEST] ✓ новых={} обновлено={} (всего ok={}) black={} err={}",
+                ingested_new, ingested_updated, ingested_ok, ok_black, ingested_err
+            ),
+        );
 
         // 5. DNA 2.5
         let dna = DnaEngine::new(&self.config.database.dna_path, self.audit.clone());
@@ -352,6 +448,10 @@ impl LearningOrchestrator {
         };
         metrics::learning_gate_finish("dna", dna_ok);
 
+        if dna_ok {
+            pipeline_msg(progress, "[INGEST] DNA 2.5 обновлена");
+        }
+
         Ok(CycleResult {
             topic: topic.to_string(),
             items_found: items.len(),
@@ -360,11 +460,19 @@ impl LearningOrchestrator {
             inquisitor_blocks: inq_block_details.len(),
             inquisitor_escalates: inq_escalate_details.len(),
             ingested_ok,
+            ingested_new,
+            ingested_updated,
             ingested_white: ok_white,
             ingested_black: ok_black,
             ingested_err,
             dna_updated: dna_ok,
             dna_snapshot: dna_snap,
         })
+    }
+}
+
+fn pipeline_msg(progress: Option<&tokio::sync::broadcast::Sender<String>>, msg: impl Into<String>) {
+    if let Some(tx) = progress {
+        let _ = tx.send(msg.into());
     }
 }
