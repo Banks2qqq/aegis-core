@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>BI.ZONE Expertise — pilot mirror</title>
+    <link>https://bi.zone</link>
+    <item>
+      <title>BI.ZONE: кампания с кражей учётных данных</title>
+      <link>https://bi.zone</link>
+      <description>Эксперты фиксируют credential access и фишинг в финансовом секторе.</description>
+    </item>
+  </channel>
+</rss>

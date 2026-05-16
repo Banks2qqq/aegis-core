@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>PT Security — pilot mirror</title>
+    <link>https://www.ptsecurity.com</link>
+    <description>AEGIS pilot RSS mirror (обновляйте через scout-sync-phase4-feeds.sh)</description>
+    <item>
+      <title>Киберугрозы в промышленности: обзор уязвимостей CVE-2024-3400</title>
+      <link>https://www.ptsecurity.com</link>
+      <description>Аналитика PT: критическая уязвимость CVE-2024-3400 в периметровых устройствах.</description>
+    </item>
+    <item>
+      <title>Positive Technologies: рост атак с использованием RAT</title>
+      <link>https://www.ptsecurity.com</link>
+      <description>В отчёте отмечен рост удалённого управления и фишинга против корпоративных сегментов.</description>
+    </item>
+  </channel>
+</rss>

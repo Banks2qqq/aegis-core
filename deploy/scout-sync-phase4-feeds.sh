@@ -4,6 +4,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOST="${1:-${PRIMARY_HOST:-178.236.16.101}}"
 USER="${VPS_USER:-root}"
+FEEDS_LOCAL="${ROOT}/deploy/feeds"
+
+echo "==> Upload bundled pilot mirrors (if present)"
+ssh -o StrictHostKeyChecking=no "${USER}@${HOST}" "mkdir -p /opt/aegis/feeds"
+for f in pt-analytics-rss.xml bi-zone-rss.xml facct-rss.xml rt-solar-rss.xml; do
+  if [[ -f "${FEEDS_LOCAL}/${f}" ]]; then
+    scp -o StrictHostKeyChecking=no "${FEEDS_LOCAL}/${f}" "${USER}@${HOST}:/opt/aegis/feeds/${f}"
+    echo "  bundled → /opt/aegis/feeds/${f}"
+  fi
+done
 
 ssh -o StrictHostKeyChecking=no "${USER}@${HOST}" bash -s <<'REMOTE'
 set -euo pipefail

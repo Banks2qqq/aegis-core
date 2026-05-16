@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>FACCT — pilot mirror</title>
+    <link>https://www.facct.ru</link>
+    <item>
+      <title>FACCT: новая волна ransomware</title>
+      <link>https://www.facct.ru</link>
+      <description>Исследование группировок и индикаторов компрометации CVE-2023-4966.</description>
+    </item>
+  </channel>
+</rss>
