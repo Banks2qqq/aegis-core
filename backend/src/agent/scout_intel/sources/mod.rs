@@ -1,6 +1,7 @@
 //! Per-source collectors (open APIs + keyed aggregators).
 
 pub mod abuse_ch;
+pub mod blog_rss;
 pub mod feed_parse;
 pub mod fortiguard;
 pub mod fstec;
@@ -39,5 +40,9 @@ pub fn all_sources() -> Vec<Box<dyn ScoutSource>> {
         Box::new(talos::TalosBlocklistSource),
         Box::new(fortiguard::FortiGuardOutbreakSource),
         Box::new(safe_surf::SafeSurfNkckiSource),
+        Box::new(blog_rss::BlogRssSource::new(blog_rss::PT_ANALYTICS)),
+        Box::new(blog_rss::BlogRssSource::new(blog_rss::BI_ZONE)),
+        Box::new(blog_rss::BlogRssSource::new(blog_rss::FACCT)),
+        Box::new(blog_rss::BlogRssSource::new(blog_rss::RT_SOLAR)),
     ]
 }

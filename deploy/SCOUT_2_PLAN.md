@@ -21,8 +21,8 @@
 | `talos` | talosintelligence.com | IP blocklist | ✅ mirror/file (`TALOS_BLOCKLIST_PATH`) |
 | `fortiguard` | fortiguard.com | Outbreak RSS | ✅ |
 | `safe_surf` | safe-surf.ru | НКЦКИ RSS | ✅ |
-| `pt_analytics` | ptsecurity.com/... | аналитика | 📋 фаза 4 |
-| `bi_zone`, `facct`, `rt-solar` | блоги | OSINT | 📋 фаза 4 |
+| `pt_analytics` | ptsecurity.com/... | аналитика | ✅ RSS + mirror |
+| `bi_zone`, `facct`, `rt_solar` | блоги | OSINT | ✅ mirror `/opt/aegis/feeds/*.xml` |
 
 ## Этапы
 
@@ -42,10 +42,11 @@
 - OTX, VirusTotal (env).
 - Talos / Fortinet (по доступным открытым фидам).
 
-### Этап 4 — Устойчивость
-- Анти-дубль запуска SCOUT.
-- Метрики Prometheus по источникам.
-- DR / кэш MITRE локально.
+### Этап 4 — Устойчивость ✅
+- Анти-дубль запуска SCOUT (`409`) + **stale lock** (`SCOUT_LOCK_MAX_SECS`, default 600).
+- Метрики Prometheus по источникам (`aegis_scout_intel_source_total`).
+- DR / кэш MITRE локально (`AEGIS_MITRE_MAP_PATH`).
+- Smoke: `integration-scout-phase4.sh` · feeds: `scout-sync-phase4-feeds.sh`.
 
 ## Цепочка (автономная)
 

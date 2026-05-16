@@ -1,6 +1,7 @@
 //! Parallel collection from all registered open sources.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::broadcast;
 use tokio::time::{timeout, Duration};
@@ -11,6 +12,22 @@ use super::types::ScoutFinding;
 use super::ux;
 
 static SCOUT_RUN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+/// Unix secs when current SCOUT run started (0 = idle).
+static SCOUT_RUN_STARTED_AT: AtomicU64 = AtomicU64::new(0);
+
+fn now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn scout_lock_max_secs() -> u64 {
+    std::env::var("SCOUT_LOCK_MAX_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(600)
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SourceRunStatus {
@@ -39,17 +56,33 @@ pub struct ScoutCollectionReport {
 }
 
 pub fn try_begin_scout_run() -> Result<(), String> {
+    if SCOUT_RUN_IN_FLIGHT.load(Ordering::Acquire) {
+        let started = SCOUT_RUN_STARTED_AT.load(Ordering::Acquire);
+        let max_secs = scout_lock_max_secs();
+        if started > 0 && now_unix().saturating_sub(started) > max_secs {
+            tracing::warn!(
+                started,
+                max_secs,
+                "SCOUT lock stale — force release (phase 4)"
+            );
+            end_scout_run();
+        } else {
+            return Err("SCOUT уже выполняется — дождитесь завершения предыдущего цикла".into());
+        }
+    }
     if SCOUT_RUN_IN_FLIGHT
         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .is_err()
     {
         return Err("SCOUT уже выполняется — дождитесь завершения предыдущего цикла".into());
     }
+    SCOUT_RUN_STARTED_AT.store(now_unix(), Ordering::Release);
     Ok(())
 }
 
 pub fn end_scout_run() {
     SCOUT_RUN_IN_FLIGHT.store(false, Ordering::Release);
+    SCOUT_RUN_STARTED_AT.store(0, Ordering::Release);
 }
 
 pub async fn run_intel_collection(

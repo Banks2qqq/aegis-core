@@ -11,10 +11,24 @@ struct MitreEntry {
     keywords: Vec<String>,
 }
 
-static MITRE_MAP: LazyLock<Vec<MitreEntry>> = LazyLock::new(|| {
+static MITRE_MAP: LazyLock<Vec<MitreEntry>> = LazyLock::new(load_mitre_map);
+
+fn load_mitre_map() -> Vec<MitreEntry> {
+    if let Ok(path) = std::env::var("AEGIS_MITRE_MAP_PATH") {
+        let path = path.trim();
+        if !path.is_empty() {
+            if let Ok(raw) = std::fs::read_to_string(path) {
+                if let Ok(v) = serde_json::from_str::<Vec<MitreEntry>>(&raw) {
+                    tracing::info!(path = %path, entries = v.len(), "MITRE map loaded from file (DR cache)");
+                    return v;
+                }
+                tracing::warn!(path = %path, "MITRE map file invalid JSON — embedded fallback");
+            }
+        }
+    }
     let raw = include_str!("data/mitre_map.json");
     serde_json::from_str(raw).unwrap_or_default()
-});
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct MitreMatch {
