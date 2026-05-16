@@ -99,7 +99,7 @@ if [[ -n "$API_KEY" ]]; then
   [[ -n "$TOKEN" ]] && gate_ok "monitor API key login" || gate_fail "login failed"
 fi
 
-# --- 7. Branch A integration bundle (populates sandbox/hitl/deception metrics) ---
+# --- 7. Branch A integration bundle (+ H7 demo/ReAct/Godmode E2E) ---
 if [[ "${SKIP_INTEGRATION:-0}" != "1" && -n "$API_KEY" ]]; then
   if bash "${SMOKE}/integration-honest-10-branch-a.sh"; then
     gate_ok "integration-honest-10-branch-a"

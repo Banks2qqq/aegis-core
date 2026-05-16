@@ -12,6 +12,7 @@ bash "$ROOT/deploy/smoke/smoke-api.sh"
 bash "$ROOT/deploy/smoke/integration-healing-registry.sh"
 
 bash "$ROOT/deploy/smoke/integration-react-status.sh"
+bash "$ROOT/deploy/smoke/integration-demo-e2e.sh"
 
 bash "$ROOT/deploy/smoke/integration-scout-contain.sh"
 bash "$ROOT/deploy/smoke/integration-scout-autonomy.sh"

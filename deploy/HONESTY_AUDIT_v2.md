@@ -15,6 +15,7 @@
 | Pilot form | `POST /api/pilot` → `data/pilot_requests/*.json` + audit |
 | Federation | 2 nodes, mTLS 8443, sync; chaos 6/6 |
 | Scout intel | ≥8 sources when scout run; hub metrics otherwise |
+| Demo / ReAct / Godmode E2E | `integration-demo-e2e.sh` — status, HITL 409, ReAct complete, audit-tail, air-gap toggle, agents |
 
 ## Primary vs secondary (intentional)
 

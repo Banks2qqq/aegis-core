@@ -17,7 +17,8 @@ for s in \
   integration-heal-sandbox-real.sh \
   integration-deception-h2.sh \
   integration-heal-hitl.sh \
-  integration-auth-h5.sh; do
+  integration-auth-h5.sh \
+  integration-demo-e2e.sh; do
   echo "--- $s"
   bash "${SMOKE}/${s}"
 done

@@ -18,6 +18,8 @@ sync_smokes() {
     "${ROOT}/deploy/smoke/integration-heal-sandbox-real.sh" \
     "${ROOT}/deploy/smoke/integration-deception-h2.sh" \
     "${ROOT}/deploy/smoke/integration-heal-hitl.sh" \
+    "${ROOT}/deploy/smoke/integration-demo-e2e.sh" \
+    "${ROOT}/deploy/smoke/integration-react-status.sh" \
     "${ROOT}/deploy/smoke/integration-federation-prod-vps.sh" \
     "${ROOT}/deploy/smoke/smoke-prod-vps.sh" \
     "${USER}@${host}:/opt/aegis/deploy/smoke/"

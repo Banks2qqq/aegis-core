@@ -18,7 +18,7 @@
 | **H4** | Landing truth + pilot API | `page.tsx`, `api_status/public` | ✅ реальные метрики + pilot persist |
 | **H5** | Hashed API keys | `api_key_store.rs`, `auth.rs` | ✅ `integration-auth-h5.sh` |
 | **H6** | Nginx `/metrics` + public status | `nginx-aegis-*.conf` | ✅ `integration-nginx-metrics-h6.sh` |
-| **H7** | Demo/ReAct/Godmode E2E smoke | `integration-demo-e2e.sh` | all 200 |
+| **H7** | Demo/ReAct/Godmode E2E smoke | `integration-demo-e2e.sh` | ✅ |
 | **H8** | `honesty-gate.sh` + finalize | `deploy/smoke/honesty-gate.sh`, `pilot-honest-10-finalize.sh` | ✅ |
 
 **Критический путь:** H1 → H2 → H3 → H8. H4–H7 параллельно после H1.
@@ -118,7 +118,24 @@ Smoke: `./deploy/smoke/integration-heal-hitl.sh` (deploy: `./deploy/h3-hitl-depl
 - `deploy/pilot-honest-10-finalize.sh` — обе ноды + federation + chaos 6/6
 - `deploy/HONESTY_AUDIT_v2.md` — итоговый аудит
 
-Проверки: health, journal (no fake sandbox / no Firecracker honeypot logs), api_keys, test-key 401, metrics H1–H3, federation peers, pilot POST, branch-A integration bundle, optional `HONESTY_RUN_SCOUT=1` для sources_ok≥8.
+Проверки: health, journal (no fake sandbox / no Firecracker honeypot logs), api_keys, test-key 401, metrics H1–H3, federation peers, pilot POST, branch-A integration bundle (вкл. H7 demo E2E), optional `HONESTY_RUN_SCOUT=1` для sources_ok≥8.
+
+## H7 — Demo E2E ✅
+
+Скрипт: `deploy/smoke/integration-demo-e2e.sh` (цепочка как `/dashboard/demo`).
+
+| Шаг | Endpoint | Ожидание |
+|-----|----------|----------|
+| Status | `GET /api/status` | 200, `air_gapped`, `react_ready` |
+| HITL | `POST /api/code-demo` `approved=false` | **409** `needs_human_approval` |
+| ReAct status | `GET /api/react/status` | 200 |
+| ReAct mission | `POST /api/react` | 200 `accepted`, новый `last_completed_at` на агенте `react` |
+| Audit | `GET /api/audit-tail` | `exists=true` |
+| God Mode | `POST /api/air-gap` toggle + restore | 200 |
+| Code approved | `POST /api/code-demo` `approved=true` | 200 |
+| Agents | `GET /api/agents` | массив ≥1 |
+
+Deploy: `./deploy/h7-demo-deploy.sh` · таймаут ReAct: `REACT_WAIT_SECS=90` (по умолчанию).
 
 ---
 
