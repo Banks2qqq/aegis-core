@@ -5,9 +5,9 @@
 ---
 
 ## Подготовка (За 5 минут до показа)
-1. Откройте десктопное приложение `AEGIS.app` (Tauri).
-2. Залогиньтесь с ключом `test-key-enterprise`.
-3. Перейдите на страницу **Overview (War Room)**.
+1. Откройте **https://aegis-security.ru/dashboard/login** (или Tauri `AEGIS.app` на тот же backend).
+2. Войдите с **операторским ключом** (`AEGIS_DASHBOARD_API_KEY` из `/etc/aegis/agent.env` на primary). В prod `test-key-enterprise` **не работает** (`AEGIS_DEV_MODE=0`).
+3. Перейдите на **Overview (War Room)**. Для HITL-патчей: **Healing** (`/dashboard/healing`).
 
 ---
 
@@ -61,17 +61,15 @@
 
 ---
 
-## Шаг 5: God Mode и требования регуляторов (2 минуты)
+## Шаг 5: HITL, God Mode и аудит (2 минуты)
 **Что говорить:**
-> "И наконец, панель администратора — **God Mode**.
-> Мы понимаем требования ФСТЭК к аудиту и изоляции. 
-> Во-первых, вы можете в один клик сгенерировать полный журнал аудита в формате, соответствующем ГОСТ Р.
-> Во-вторых, система поддерживает режим строгой изоляции (Air-Gapped). При его включении AEGIS физически отрубает все внешние сетевые вызовы и переходит на локальные LLM-модели и базы знаний, обеспечивая 100% защиту от утечек данных."
+> "Критические патчи проходят Docker-sandbox и попадают в очередь **Human-in-the-Loop** — без явного approve оператора heal не применяется на primary (dry-run).
+> В **God Mode** — air-gapped, federation sync и выгрузка audit trail. Логи и метрики соответствуют реальному поведению: sandbox с ненулевой длительностью, honeypot — Docker listener."
 
 **Действия:**
-- Откройте вкладку **God Mode**.
-- Нажмите кнопку **"Перевести в изолированный режим (Air-Gapped)"**. Обратите внимание комиссии на появление зеленого бейджа `AIR-GAPPED: ENABLED` в верхней панели.
-- Нажмите кнопку **"Выгрузить журнал аудита (ФСТЭК)"**.
+- **Healing:** покажите pending patch → Approve/Reject (на staging node2 при `HEAL_APPLY=1` — реальное применение).
+- **God Mode:** air-gapped toggle, audit export, ссылка на Federation.
+- Перед показом (опционально): `bash deploy/pilot-honest-10-finalize.sh` — honesty gate PASS на обеих VPS.
 
 ---
 

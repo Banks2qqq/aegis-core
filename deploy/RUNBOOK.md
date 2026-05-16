@@ -56,6 +56,24 @@ bash /opt/aegis/deploy/smoke/smoke-prod-vps.sh
 # полный SCOUT: RUN_SCOUT_AUTONOMY=1 bash .../smoke-prod-vps.sh
 ```
 
+**Branch A — honesty gate (H1–H8, с Mac):**
+
+```bash
+./deploy/pilot-honest-10-finalize.sh
+# только gate на VPS: /opt/aegis/deploy/smoke/honesty-gate.sh
+# scout sources_ok≥8: HONESTY_RUN_SCOUT=1 honesty-gate.sh
+```
+
+| Node | URL | `HEAL_APPLY` | `CONTAIN_ENFORCE` |
+|------|-----|--------------|-------------------|
+| Primary | `aegis-security.ru` | `0` | `0` |
+| Secondary | `node2.aegis-security.ru` | `1` | `1` |
+
+- Sandbox: `AEGIS_SANDBOX_RUNTIME=docker` — реальный `docker run`, не `duration=0.00s`.
+- Deception: Docker nginx listener (`POST /api/deception/deploy`), не Firecracker.
+- HITL: `/dashboard/healing` + `GET/POST /api/heal/pending|approve|reject`.
+- Аудит: `deploy/HONESTY_AUDIT_v2.md`.
+
 **Scout C1 — Talos + FortiGuard:**
 ```bash
 ./deploy/scout-sync-talos-feed.sh    # mirror → /opt/aegis/feeds/talos-ip-blacklist.txt
