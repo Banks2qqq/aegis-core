@@ -244,14 +244,14 @@ const BUILT_PHASES: BuiltPhase[] = [
     number: 'PHASE 4',
     title: 'Hardened Verification',
     description:
-      'Формальная верификация на уровне AST + Taint Tracking. Обнаруживает опасный код даже при хитром форматировании. Все секреты хранятся в HSM/Vault. E2E-тесты на каждом этапе.',
+      'Формальная верификация на уровне AST + Taint Tracking. Обнаруживает опасный код даже при хитром форматировании. Секреты — hashed API keys и JWT, без plaintext в prod.',
   },
   {
     number: 'PHASE 5',
     title: 'Autonomous Evolution',
     description: (
       <>
-        Self-Healing 2.0 с частичной автономией. Honeypots 2.0 с реальным Firecracker. Raft 2.0 с log replication. Система не просто защищает — она <strong>эволюционирует</strong> вместе с угрозами.
+        Self-Healing с Docker-sandbox и HITL-очередью. Deception — Docker nginx listener (canary). Federation sync + Raft metrics. Система <strong>эволюционирует</strong> вместе с угрозами — без маркетинговых заглушек.
       </>
     ),
   },
@@ -356,7 +356,8 @@ const features: KeyFeature[] = [
   {
     icon: <RefreshCw className="w-8 h-8" />,
     title: 'Self-Healing 2.0',
-    description: 'Частичная автономия. Low/Medium патчи применяются автоматически при низком риске.',
+    description:
+      'Docker-sandbox, formal verify, HITL approve/reject. На prod primary — dry-run; apply по политике на staging.',
   },
   {
     icon: <Code2 className="w-8 h-8" />,
@@ -366,14 +367,14 @@ const features: KeyFeature[] = [
   },
   {
     icon: <Key className="w-8 h-8" />,
-    title: 'HSM / Vault',
-    description: 'Хранение всех секретов в HashiCorp Vault. Zero-Trust на уровне ключей.',
+    title: 'API keys (hashed)',
+    description: 'SQLite api_keys + JWT. test-key отключён при AEGIS_DEV_MODE=0. Ротация через agent.env.',
   },
   {
     icon: <Users className="w-8 h-8" />,
-    title: 'Raft 2.0',
+    title: 'Raft + Federation',
     description:
-      'Реальный Raft с log replication, state machine и majority commit. Полноценный распределённый консенсус.',
+      'Federation mTLS sync между нодами; Raft — метрики и orchestration. SLA пилота строится на federation sync.',
   },
   {
     icon: <Lock className="w-8 h-8" />,
@@ -413,7 +414,44 @@ const KeyCapabilitiesSection = () => (
   </section>
 );
 
-const PilotSection = () => (
+const PilotSection = () => {
+  const api = useMemo(() => new ApiClient({ timeoutMs: 12000 }), []);
+  const { showToast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ name: '', company: '', email: '', message: '' });
+
+  const setField = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setForm((prev) => ({ ...prev, [k]: e.target.value }));
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading) return;
+    if (!form.name.trim() || !form.company.trim() || !form.email.trim()) {
+      showToast('Заполните имя, компанию и email', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.request('/api/pilot', {
+        method: 'POST',
+        json: {
+          name: form.name.trim(),
+          company: form.company.trim(),
+          email: form.email.trim(),
+          message: form.message.trim() || undefined,
+        },
+      });
+      showToast('Заявка отправлена (сохранено на сервере).', 'success');
+      setForm({ name: '', company: '', email: '', message: '' });
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Ошибка отправки', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
   <section id="pilot" className="py-20 border-t border-white/10 bg-black/60">
     <div className="max-w-4xl mx-auto px-6 text-center">
       <div className="text-[#00F5A3] text-sm tracking-[3px] mb-4">ГОТОВЫ К ПИЛОТУ</div>
@@ -426,22 +464,27 @@ const PilotSection = () => (
         Оставьте заявку, и мы проведём персональную демонстрацию + поможем с развёртыванием пилота
       </p>
 
-      {/* Форма заявки */}
       <div className="glass-card rounded-3xl p-10 max-w-xl mx-auto">
-        <form className="space-y-6">
+        <form className="space-y-6" onSubmit={submit}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm text-white/70 mb-2">Имя</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
+                value={form.name}
+                onChange={setField('name')}
+                required
                 className="w-full bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:border-[#00F5A3] outline-none"
                 placeholder="Иван Иванов"
               />
             </div>
             <div>
               <label className="block text-sm text-white/70 mb-2">Компания</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
+                value={form.company}
+                onChange={setField('company')}
+                required
                 className="w-full bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:border-[#00F5A3] outline-none"
                 placeholder="Название компании"
               />
@@ -450,8 +493,11 @@ const PilotSection = () => (
 
           <div>
             <label className="block text-sm text-white/70 mb-2">Email</label>
-            <input 
-              type="email" 
+            <input
+              type="email"
+              value={form.email}
+              onChange={setField('email')}
+              required
               className="w-full bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:border-[#00F5A3] outline-none"
               placeholder="you@company.com"
             />
@@ -459,26 +505,28 @@ const PilotSection = () => (
 
           <div>
             <label className="block text-sm text-white/70 mb-2">Что вас интересует?</label>
-            <textarea 
+            <textarea
+              value={form.message}
+              onChange={setField('message')}
               className="w-full bg-black/40 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:border-[#00F5A3] outline-none h-28 resize-y"
               placeholder="Хотим протестировать на нашей инфраструктуре..."
             />
           </div>
 
-          <button 
+          <button
             type="submit"
-            className="w-full bg-[#00F5A3] hover:bg-[#00E090] text-black font-semibold py-4 rounded-2xl transition-all active:scale-[0.985]"
+            disabled={loading}
+            className="w-full bg-[#00F5A3] hover:bg-[#00E090] text-black font-semibold py-4 rounded-2xl transition-all active:scale-[0.985] disabled:opacity-60"
           >
-            Отправить заявку на пилот
+            {loading ? 'Отправка…' : 'Отправить заявку на пилот'}
           </button>
         </form>
 
         <p className="text-xs text-white/50 mt-6">
-          Мы свяжемся с вами в течение 24 часов
+          Заявка сохраняется на сервере пилота (POST /api/pilot)
         </p>
       </div>
 
-      {/* Trust-маркеры */}
       <div className="mt-12 flex flex-wrap justify-center gap-x-8 gap-y-4 text-white/60 text-sm">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 bg-[#00F5A3] rounded-full" /> Rust
@@ -490,12 +538,13 @@ const PilotSection = () => (
           <div className="w-2 h-2 bg-[#00F5A3] rounded-full" /> Qdrant
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 bg-[#00F5A3] rounded-full" /> 11 источников Threat Intel
+          <div className="w-2 h-2 bg-[#00F5A3] rounded-full" /> Threat Intel + BDU
         </div>
       </div>
     </div>
   </section>
-);
+  );
+};
 
 const WhatWeBuiltSection = () => (
   <section id="phases-built" className="py-20 border-t border-white/10 bg-black/40">
@@ -517,7 +566,27 @@ const WhatWeBuiltSection = () => (
   </section>
 );
 
-const ThreatMap = () => {
+type LandingPublicStats = {
+  bdu_records?: number;
+  fusion_clusters?: number;
+  federation_peers?: number;
+  honeypots_active?: number;
+  healing_ready?: boolean;
+} | null;
+
+const ThreatMap = ({ publicStats }: { publicStats: LandingPublicStats }) => {
+  const mapStats = useMemo(
+    () => [
+      { label: 'Записей BDU (ФСТЭК)', value: publicStats?.bdu_records != null ? String(publicStats.bdu_records) : '—' },
+      { label: 'Fusion-кластеров', value: publicStats?.fusion_clusters != null ? String(publicStats.fusion_clusters) : '—' },
+      {
+        label: 'Honeypots / deception',
+        value: publicStats?.honeypots_active != null ? String(publicStats.honeypots_active) : '—',
+      },
+    ],
+    [publicStats],
+  );
+
   const points = useMemo(
     () => [
       { top: '30%', left: '25%', label: 'NA_CORE_1' },
@@ -549,11 +618,7 @@ const ThreatMap = () => {
               Карта распределенных узлов AEGIS
             </h2>
             <div className="space-y-6">
-              {[
-                { label: 'Нейтрализовано активных угроз', value: '1.2M+' },
-                { label: 'Средняя задержка', value: '14мс' },
-                { label: 'Активных нейро-реплик', value: '842' },
-              ].map((stat, i) => (
+              {mapStats.map((stat, i) => (
                 <motion.div
                   key={i}
                   initial={{ opacity: 0, x: -20 }}
@@ -573,8 +638,12 @@ const ThreatMap = () => {
             <div className="mt-12 flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5">
               <div className="w-2 h-2 rounded-full bg-primary-neon animate-pulse" />
               <div className="text-[10px] font-mono text-primary-soft uppercase tracking-widest leading-tight">
-                Обнаружена попытка внедрения в секторе RU-77 <br />
-                <span className="opacity-40">Статус: Автоматическая блокировка...</span>
+                Пилотные метрики с API <span className="opacity-60">/api/status/public</span>
+                <br />
+                <span className="opacity-40">
+                  Federation: {publicStats?.federation_peers != null ? publicStats.federation_peers : '—'} · Self-Heal:{' '}
+                  {publicStats?.healing_ready ? 'ready' : publicStats ? 'off' : '—'}
+                </span>
               </div>
             </div>
           </div>
@@ -1047,7 +1116,8 @@ const QuickScanner = () => {
             Быстрая проверка контура
           </h2>
           <p className="font-sans text-on-surface-variant opacity-70 max-w-xl mx-auto">
-            Симуляция оценки экспозиции. В пилоте заменяется на интеграцию с данными заказчика.
+            Демо-виджет на лендинге: локальная симуляция без вызова бэкенда. В пилоте — Scout и реальные источники
+            заказчика.
           </p>
         </div>
 
@@ -1111,40 +1181,35 @@ const QuickScanner = () => {
   );
 };
 
-const IncidentFeed = () => {
-  const [incidents, setIncidents] = useState<string[]>([
-    '[04:21:05] Блокировка DDoS атаки (6.4 Gbps) - RU-MOW',
-    '[04:21:07] Попытка SQL-инъекции нейтрализована - US-WDC',
-    '[04:21:10] Нейронная репликация узла 482 завершена',
-  ]);
+/** Одна строка живого статуса пилота (без симулированных «инцидентов»). */
+const PilotStatusStrip = () => {
+  const [line, setLine] = useState<string | null>(null);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      const types = ['DDoS блокирован', 'Взлом предотвращен', 'Узел восстановлен', 'Брутфорс отбит'];
-      const locations = ['EU-BER', 'AS-TYO', 'NA-NYC', 'RU-SPL'];
-      const newIncident = `[${new Date().toLocaleTimeString()}] ${
-        types[Math.floor(Math.random() * types.length)]
-      } - ${locations[Math.floor(Math.random() * locations.length)]}`;
-      setIncidents((prev) => [newIncident, ...prev].slice(0, 3));
-    }, 4000);
-    return () => clearInterval(interval);
+    const client = new ApiClient({ timeoutMs: 8000 });
+    client
+      .getPublicStatus()
+      .then((s) => {
+        const heal = s.healing_ready ? 'ready' : 'off';
+        setLine(
+          `Пилот ${s.status} · BDU ${s.bdu_records ?? '—'} · Federation ${s.federation_peers ?? '—'} · Heal ${heal}`,
+        );
+      })
+      .catch(() => setLine('Пилот: /api/status/public недоступен'));
   }, []);
 
+  if (!line) return null;
+
   return (
-    <div className="fixed bottom-10 left-10 z-[100] hidden lg:block pointer-events-none">
-      <div className="space-y-3">
-        {incidents.map((incident, i) => (
-          <motion.div
-            key={incident}
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 1 - i * 0.3, x: 0 }}
-            className="glass-panel px-4 py-2 rounded-lg border-white/5 text-[10px] font-mono text-primary-soft/90 whitespace-nowrap shadow-xl"
-          >
-            {incident}
-          </motion.div>
-        ))}
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="fixed bottom-8 left-8 z-[100] hidden lg:block pointer-events-none"
+    >
+      <div className="glass-panel px-4 py-2 rounded-lg border border-white/10 text-[10px] font-mono text-primary-soft/90 shadow-xl">
+        {line}
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -1239,14 +1304,11 @@ const TrustSection = () => {
       </div>
 
       <div className="max-w-5xl mx-auto mt-20">
+        <p className="text-center text-xs text-white/50 mb-6 uppercase tracking-widest">
+          Типовые отрасли пилота (без раскрытия заказчиков)
+        </p>
         <div className="flex flex-wrap justify-center items-center gap-4">
-          {[
-            'Large Bank',
-            'Government Agency',
-            'Critical Infrastructure',
-            'AI Research Lab',
-            'Telecom Operator',
-          ].map((label) => (
+          {['FinTech / банки', 'Госсектор', 'Критическая инфраструктура', 'Телеком', 'Промышленность'].map((label) => (
             <div
               key={label}
               className="glass-panel px-6 py-3 rounded-2xl border border-white/10 text-white/70 font-mono text-[11px] tracking-widest uppercase bg-white/5 backdrop-blur-xl"
@@ -1550,7 +1612,7 @@ export default function Page() {
       <AnimatedSVGBackground />
       <AtmosphericOrbs />
       <BackgroundParticles />
-      <IncidentFeed />
+      <PilotStatusStrip />
 
       <motion.div className="fixed top-0 left-0 right-0 h-[2px] bg-primary-neon z-[60] origin-left" style={{ scaleX: scrollYProgress }} />
 
@@ -1676,7 +1738,7 @@ export default function Page() {
 
       <PilotSection />
 
-      <ThreatMap />
+      <ThreatMap publicStats={publicStats} />
       <div className="section-transition" />
       <ThreatTicker />
       <div className="section-transition" />
